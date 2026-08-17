@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Adam - Model Selection</title>
+  <link rel="icon" type="image/svg+xml" href='data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%2300f3ff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5L12 3l7.5 13.5M7 12h10M12 3v13.5"/><circle cx="12" cy="18" r="1.5" fill="%2300f3ff"/></svg>'>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    html {
+      background: transparent !important;
+    }
+    body {
+      padding: 0;
+      background-color: var(--bg-darker);
+      border-radius: 28px;
+      border: 1px solid var(--border-color);
+      overflow: hidden;
+    }
+    
+    .titlebar {
+      border-top-left-radius: 28px;
+      border-top-right-radius: 28px;
+    }
+    
+    .window-content {
+      padding: 20px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      min-height: 0;
+      overflow-y: hidden;
+      border-bottom-left-radius: 28px;
+      border-bottom-right-radius: 28px;
+    }
+
+    .header-area {
+      text-align: center;
+      margin-bottom: 12px;
+    }
+
+    .header-area h1 {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      background: var(--accent-grad);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 2px;
+    }
+
+    .header-area p {
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+
+    /* Scrollable middle container */
+    .selection-scroll-area {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding-right: 6px;
+      margin-bottom: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .model-group {
+      background: rgba(255, 255, 255, 0.01);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 14px;
+    }
+
+    .group-header {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--accent-cyan);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .group-description {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+      line-height: 1.4;
+    }
+
+    .card-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .model-card {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .model-card:hover {
+      border-color: rgba(0, 195, 255, 0.2);
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    /* Stand out selected model cards */
+    .model-card.selected {
+      border-color: var(--accent-cyan);
+      background: rgba(0, 195, 255, 0.08);
+      box-shadow: 0 0 15px rgba(0, 195, 255, 0.2);
+      color: #ffffff;
+    }
+
+    .model-card.disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+      border-color: rgba(255,255,255,0.02);
+      background: rgba(255,255,255,0.01);
+    }
+
+    .card-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .card-checkbox {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--accent-cyan);
+      cursor: pointer;
+    }
+
+    .card-name {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-main);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .card-meta {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      margin-left: 8px;
+      flex-shrink: 0;
+    }
+
+    .card-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+
+    .device-toggle-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      transition: color 0.2s ease;
+    }
+
+    .model-card.selected .device-toggle-label {
+      color: var(--text-main);
+    }
+
+    /* Switch toggle styling */
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 42px;
+      height: 20px;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(255, 255, 255, 0.05);
+      transition: .3s;
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 12px;
+      width: 12px;
+      left: 3px;
+      bottom: 3px;
+      background-color: var(--text-dim);
+      transition: .3s;
+      border-radius: 50%;
+    }
+
+    input:checked + .slider {
+      background-color: rgba(0, 195, 255, 0.15);
+      border-color: var(--accent-cyan);
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(22px);
+      background-color: var(--accent-cyan);
+      box-shadow: 0 0 6px var(--accent-cyan);
+    }
+
+    /* Inactive switches */
+    .device-switch:disabled + .slider {
+      cursor: not-allowed;
+      opacity: 0.2;
+    }
+
+    .device-switch:disabled + .slider:before {
+      background-color: rgba(255,255,255,0.1);
+    }
+
+    .family-warning {
+      color: var(--danger);
+      font-size: 10px;
+      margin-left: 6px;
+      font-weight: 600;
+    }
+
+    /* Fixed Bottom resource block */
+    .resource-planner {
+      background: rgba(10, 18, 42, 0.85);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 14px;
+      box-shadow: var(--shadow-glow);
+    }
+
+    .planner-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--accent-cyan);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      padding-bottom: 4px;
+    }
+
+    .meters-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-bottom: 12px;
+    }
+
+    .meter-label-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+
+    .meter-bar-bg {
+      height: 6px;
+      background: rgba(255, 255, 255, 0.04);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .meter-bar-fill {
+      height: 100%;
+      background: var(--accent-grad);
+      width: 0%;
+      border-radius: 3px;
+      transition: width 0.4s ease;
+    }
+
+    .meter-bar-fill.overflow {
+      background: linear-gradient(135deg, var(--danger) 0%, #fca5a5 100%);
+      box-shadow: 0 0 8px var(--danger);
+    }
+
+    .meter-bar-fill.warning {
+      background: linear-gradient(135deg, var(--warning) 0%, #fbcfe8 100%);
+    }
+
+    .action-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .benchmark-status {
+      font-size: 11px;
+      font-weight: 600;
+      display: none;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .loader {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+      gap: 16px;
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(0, 102, 255, 0.1);
+      border-radius: 50%;
+      border-top-color: var(--accent-cyan);
+      animation: spin 1s linear infinite;
+      box-shadow: var(--shadow-glow);
+    }
+
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+  <div class="titlebar">
+    <div class="brand">
+      <svg class="brand-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4.5 16.5L12 3l7.5 13.5M7 12h10M12 3v13.5"></path>
+        <circle cx="12" cy="18" r="1.5" fill="currentColor"></circle>
+      </svg>
+      ADAM
+    </div>
+    <div class="window-controls">
+      <button class="control-btn" onclick="window.api.windowControl('minimize')">—</button>
+      <button class="control-btn close-btn" onclick="window.api.windowControl('close')">×</button>
+    </div>
+  </div>
+
+  <div class="app-container">
+    <!-- Initial Loader -->
+    <div id="backend-loader" class="loader">
+      <div class="spinner"></div>
+      <p style="color: var(--text-muted); font-size: 14px;">Connecting to Adam Core services...</p>
+    </div>
+
+    <!-- Main Content -->
+    <div id="main-content" class="window-content hidden">
+      <div class="header-area">
+        <h1>Model Pipeline Selection</h1>
+        <p>Choose models to load into the AI assistant and configure execution hardware</p>
+      </div>
+
+      <!-- Scanned models checklist -->
+      <div class="selection-scroll-area">
+        
+        <!-- MAIN MODELS -->
+        <div class="model-group">
+          <div class="group-header">
+            <span>Main Language Models</span>
+            <span style="font-size: 10px; color: var(--text-muted); font-family: var(--font-mono)">models/</span>
+          </div>
+          <div class="group-description" style="display: flex; justify-content: space-between; align-items: center;">
+            <span>Select exactly one main language model.</span>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 10px; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">KV Cache:</span>
+              <select id="kv-quant-select" style="font-size: 11px; padding: 2px 6px; background: rgba(0,0,0,0.4); border: 1px solid var(--border-color); color: var(--text-main); border-radius: 4px; outline: none; font-family: var(--font-sans);">
+                <option value="f16">f16 (Full Precision)</option>
+                <option value="q8_0">q8_0 (8-bit Quantized)</option>
+                <option value="q4_0" selected>q4_0 (4-bit Quantized)</option>
+              </select>
+            </div>
+          </div>
+          <div id="main-located-list" class="card-list">
+            <!-- Injected dynamically -->
+          </div>
+        </div>
+
+        <!-- DRAFT MODELS -->
+        <div class="model-group">
+          <div class="group-header">
+            <span>Draft Speculation Models</span>
+            <span style="font-size: 10px; color: var(--text-muted); font-family: var(--font-mono)">models/drafters/</span>
+          </div>
+          <div class="group-description">Optional. Speeds up main LLM generation using speculative decoding (family matching required).</div>
+          <div id="draft-located-list" class="card-list">
+            <!-- Injected dynamically -->
+          </div>
+        </div>
+
+        <!-- VISION ADAPTERS -->
+        <div class="model-group">
+          <div class="group-header">
+            <span>Multimodal Vision Adapters</span>
+            <span style="font-size: 10px; color: var(--text-muted); font-family: var(--font-mono)">models/mmproj/</span>
+          </div>
+          <div class="group-description">Optional. Enables the assistant to understand images (family matching required).</div>
+          <div id="mmproj-located-list" class="card-list">
+            <!-- Injected dynamically -->
+          </div>
+        </div>
+
+        <!-- SPEECH PIPELINES -->
+        <div class="model-group">
+          <div class="group-header">
+            <span>Vocal & Auditory Engines</span>
+          </div>
+          <div class="group-description">Select optional compute services for speech-to-text (WhisperX) and text-to-speech (Qwen-TTS).</div>
+          <div class="card-list">
+            <!-- Whisper STT Card -->
+            <div class="model-card" id="stt-service-card">
+              <div class="card-left">
+                <input type="checkbox" id="stt-enabled-checkbox" class="card-checkbox" checked>
+                <span class="card-name" style="font-weight: 600;">WhisperX STT Engine</span>
+                <select id="stt-model-size-select" style="font-size: 11px; padding: 2px 6px; background: rgba(0,0,0,0.4); border: 1px solid var(--border-color); color: var(--text-main); border-radius: 4px; outline: none; font-family: var(--font-sans); margin-left: 6px;">
+                  <option value="tiny">Tiny (0.1 GB)</option>
+                  <option value="base">Base (0.25 GB)</option>
+                  <option value="small">Small (0.50 GB)</option>
+                  <option value="medium" selected>Medium (1.50 GB)</option>
+                  <option value="large-v3">Large V3 (3.0 GB)</option>
+                </select>
+              </div>
+              <div class="card-right" id="stt-download-right">
+                <span class="device-toggle-label" id="stt-device-label">GPU</span>
+                <label class="switch">
+                  <input type="checkbox" id="stt-device-switch" checked class="device-switch">
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+            <!-- Qwen TTS Card -->
+            <div class="model-card" id="tts-service-card">
+              <div class="card-left">
+                <input type="checkbox" id="tts-enabled-checkbox" class="card-checkbox" checked>
+                <span class="card-name" style="font-weight: 600;">Qwen Vocal Textures TTS</span>
+                <span class="card-meta">0.6B (~1.2 GB)</span>
+              </div>
+              <div class="card-right" id="tts-download-right">
+                <span class="device-toggle-label" id="tts-device-label">GPU</span>
+                <label class="switch">
+                  <input type="checkbox" id="tts-device-switch" checked class="device-switch">
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Resource Planner Block -->
+      <div class="resource-planner">
+        <div class="planner-title">Hardware Allocation Planner</div>
+        <div class="meters-grid">
+          <!-- RAM meter -->
+          <div>
+            <div class="meter-label-row">
+              <span>RAM Allocation (CPU)</span>
+              <span id="ram-usage-text">0.00 GB / 0.00 GB</span>
+            </div>
+            <div class="meter-bar-bg"><div class="meter-bar-fill" id="ram-planner-bar"></div></div>
+          </div>
+          <!-- VRAM meter -->
+          <div>
+            <div class="meter-label-row">
+              <span>VRAM Allocation (GPU)</span>
+              <span id="vram-usage-text">0.00 GB / 0.00 GB</span>
+            </div>
+            <div class="meter-bar-bg"><div class="meter-bar-fill" id="vram-planner-bar"></div></div>
+          </div>
+        </div>
+
+        <div class="action-row" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+          <button id="btn-skip-models" class="glow-btn" style="background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border-color); padding: 10px 20px; font-size: 12px; color: var(--accent-cyan);">
+            USE REMOTE CONTROL ONLY
+          </button>
+          <button id="btn-proceed" class="glow-btn" disabled style="padding: 10px 20px; font-size: 12px;">
+            PROCEED TO INITIALIZER
+            <svg style="width: 14px; height: 14px; margin-left: 6px;" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M14 5l7 7m0 0l-7 7m7-7H3"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="selection.js"></script>
+</body>
+</html>

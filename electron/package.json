@@ -1,0 +1,51 @@
+{
+  "name": "adam-desktop",
+  "version": "1.0.0",
+  "description": "Desktop Interface for Adam Full-Duplex Speech Assistant",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "keywords": [],
+  "author": "Google Deepmind Team",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^28.2.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.adam.desktop",
+    "productName": "Adam",
+    "directories": {
+      "output": "../dist"
+    },
+    "files": [
+      "**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../build/temp_backend",
+        "to": "backend",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis-web"
+      ],
+      "icon": "icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Adam"
+    },
+    "nsisWeb": {
+      "appPackageUrl": "http://localhost"
+    }
+  }
+}

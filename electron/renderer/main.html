@@ -1,0 +1,1551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Adam</title>
+  <link rel="icon" type="image/svg+xml" href='data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%2300f3ff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5L12 3l7.5 13.5M7 12h10M12 3v13.5"/><circle cx="12" cy="18" r="1.5" fill="%2300f3ff"/></svg>'>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    body {
+      background-color: var(--bg-darker);
+    }
+    
+    .window-body {
+      display: flex;
+      flex: 1;
+      height: 100%;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    /* Main Sidebar (Tabs & Resources) */
+    .app-sidebar {
+      width: 240px;
+      background: rgba(2, 3, 7, 0.95);
+      border-right: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      padding: 20px 14px;
+      gap: 20px;
+      overflow-y: auto;
+      flex-shrink: 0;
+      height: 100%;
+    }
+
+    .nav-tabs {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .nav-tab {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      background: transparent;
+      border: 1px solid transparent;
+    }
+
+    .nav-tab:hover {
+      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .nav-tab.active {
+      color: var(--text-main);
+      background: rgba(0, 102, 255, 0.15);
+      border-color: rgba(0, 102, 255, 0.25);
+      box-shadow: 0 0 10px rgba(0, 102, 255, 0.1);
+      text-shadow: 0 0 4px rgba(255, 255, 255, 0.1);
+    }
+
+    /* Sidebar bottom buttons styles & hovers */
+    #btn-unload-models {
+      margin-top: 80px;
+      border: 1px solid rgba(0, 102, 255, 0.2);
+      color: var(--accent-cyan);
+      background: rgba(0, 102, 255, 0.04);
+      cursor: pointer;
+    }
+    #btn-unload-models:hover {
+      background: rgba(0, 102, 255, 0.12) !important;
+      border-color: rgba(0, 102, 255, 0.5) !important;
+      box-shadow: 0 0 10px rgba(0, 102, 255, 0.2) !important;
+      color: #fff !important;
+    }
+
+    #btn-passive-mode {
+      margin-top: 10px;
+      border: 1px solid rgba(16, 185, 129, 0.2);
+      color: #a7f3d0;
+      background: rgba(16, 185, 129, 0.04);
+      cursor: pointer;
+    }
+    #btn-passive-mode:hover {
+      background: rgba(16, 185, 129, 0.12) !important;
+      border-color: rgba(16, 185, 129, 0.5) !important;
+      box-shadow: 0 0 10px rgba(16, 185, 129, 0.25) !important;
+      color: #fff !important;
+    }
+
+    #btn-exit-app {
+      margin-top: 10px;
+      border: 1px solid rgba(239, 68, 68, 0.2);
+      color: #fca5a5;
+      background: rgba(239, 68, 68, 0.04);
+      cursor: pointer;
+    }
+    #btn-exit-app:hover {
+      background: rgba(239, 68, 68, 0.12) !important;
+      border-color: rgba(239, 68, 68, 0.5) !important;
+      box-shadow: 0 0 10px rgba(239, 68, 68, 0.25) !important;
+      color: #fff !important;
+    }
+
+    #btn-compress-context:hover, #btn-clear-chat:hover {
+      background: rgba(0, 195, 255, 0.08) !important;
+      border-color: var(--accent-cyan) !important;
+      color: #fff !important;
+      box-shadow: 0 0 8px rgba(0, 195, 255, 0.2) !important;
+    }
+
+    .nav-tab svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    /* Resource Monitor Box */
+    .resource-monitor {
+      margin-top: auto;
+      background: rgba(0, 102, 255, 0.05);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: var(--shadow-glow);
+    }
+
+    .resource-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--accent-cyan);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 2px;
+    }
+
+    .stat-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .stat-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .stat-bar-bg {
+      height: 4px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .stat-bar-fill {
+      height: 100%;
+      background: var(--accent-grad);
+      width: 0%;
+      border-radius: 2px;
+      transition: width 0.5s ease-in-out;
+    }
+
+    /* Content Area Frame */
+    .app-content {
+      flex: 1;
+      display: flex;
+      background-color: rgba(5, 8, 20, 0.5);
+      position: relative;
+    }
+
+    .tab-panel {
+      display: none;
+      width: 100%;
+      height: 100%;
+    }
+
+    .tab-panel.active {
+      display: flex;
+    }
+
+    /* --- CHAT TAB STYLE --- */
+    .chat-layout {
+      display: flex;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Chat Session Sidebar */
+    .chat-sessions-sidebar {
+      width: 220px;
+      background: rgba(2, 3, 7, 0.4);
+      border-right: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      padding: 16px 12px;
+      gap: 12px;
+    }
+
+    .new-session-btn {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px dashed var(--border-color);
+      color: var(--text-main);
+      padding: 10px;
+      border-radius: 6px;
+      font-family: var(--font-sans);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .new-session-btn:hover {
+      background: rgba(0, 102, 255, 0.08);
+      border-style: solid;
+      border-color: var(--accent-cyan);
+    }
+
+    .session-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .session-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .session-item:hover {
+      background: rgba(255, 255, 255, 0.02);
+      color: var(--text-main);
+    }
+
+    .session-item.active {
+      background: rgba(0, 102, 255, 0.1);
+      color: var(--text-main);
+      font-weight: 500;
+    }
+
+    .session-item .delete-session {
+      opacity: 0;
+      color: var(--text-dim);
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      padding: 2px;
+      display: flex;
+      align-items: center;
+      transition: all 0.2s ease;
+    }
+
+    .session-item:hover .delete-session {
+      opacity: 1;
+    }
+
+    .session-item .delete-session:hover {
+      color: var(--danger);
+    }
+
+    /* Main Chat Interface */
+    .chat-view {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      background: radial-gradient(circle at 50% 50%, rgba(0, 102, 255, 0.02) 0%, transparent 100%);
+    }
+
+    .chat-header {
+      height: 56px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+    }
+
+    .chat-header h2 {
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    .speech-status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: var(--text-dim);
+    }
+
+    .status-dot.active {
+      background-color: var(--success);
+      box-shadow: 0 0 8px var(--success);
+      animation: pulse-glow 1.5s infinite ease-in-out;
+    }
+
+    .status-dot.typing {
+      background-color: var(--accent-cyan);
+      box-shadow: 0 0 8px var(--accent-cyan);
+      animation: pulse-glow 1.5s infinite ease-in-out;
+    }
+
+    /* Message List */
+    .message-list {
+      flex: 1;
+      padding: 24px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .message-container {
+      display: flex;
+      flex-direction: column;
+      max-width: 88%;
+      padding: 14px 18px;
+      border-radius: 16px;
+      line-height: 1.5;
+      font-size: 14.5px;
+      animation: message-pop 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      box-sizing: border-box;
+    }
+
+    @keyframes message-pop {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .message-container.user {
+      align-self: flex-end;
+      background: rgba(0, 102, 255, 0.12);
+      border: 1px solid rgba(0, 102, 255, 0.25);
+      border-bottom-right-radius: 4px;
+    }
+
+    .message-container.assistant {
+      align-self: flex-start;
+      background: rgba(10, 15, 30, 0.5);
+      border: 1px solid rgba(0, 102, 255, 0.08);
+      border-bottom-left-radius: 4px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+    }
+
+    .message-sender {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 6px;
+    }
+
+    .message-sender.user { color: var(--accent-cyan); }
+    .message-sender.assistant { color: var(--accent-blue); }
+
+    .message-text {
+      white-space: normal;
+      word-break: break-word;
+      width: 100%;
+    }
+
+    /* Markdown styling for a highly professional look */
+    .message-text p {
+      margin-bottom: 12px;
+      line-height: 1.6;
+    }
+    .message-text p:last-child {
+      margin-bottom: 0;
+    }
+    .message-text h1, .message-text h2, .message-text h3, .message-text h4 {
+      font-weight: 600;
+      color: var(--text-main);
+      margin-top: 16px;
+      margin-bottom: 8px;
+      line-height: 1.3;
+    }
+    .message-text h1 { font-size: 1.4rem; border-bottom: 1px solid var(--border-color); padding-bottom: 4px; }
+    .message-text h2 { font-size: 1.2rem; }
+    .message-text h3 { font-size: 1.1rem; }
+    
+    .message-text ul, .message-text ol {
+      margin-bottom: 12px;
+      padding-left: 20px;
+    }
+    .message-text li {
+      margin-bottom: 4px;
+      line-height: 1.5;
+    }
+    
+    .message-text pre {
+      background: rgba(2, 3, 7, 0.75);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 12px;
+      margin: 12px 0;
+      overflow-x: auto;
+    }
+    .message-text code {
+      font-family: 'Consolas', 'Courier New', Courier, monospace;
+      font-size: 0.9em;
+      background: rgba(255, 255, 255, 0.08);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: var(--accent-cyan);
+    }
+    .message-text pre code {
+      background: transparent;
+      padding: 0;
+      border-radius: 0;
+      color: var(--text-main);
+      display: block;
+      white-space: pre;
+    }
+    
+    .message-text table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0;
+      font-size: 13px;
+      background: rgba(255, 255, 255, 0.01);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .message-text th, .message-text td {
+      border: 1px solid var(--border-color);
+      padding: 8px 12px;
+      text-align: left;
+    }
+    .message-text th {
+      background: rgba(0, 102, 255, 0.1);
+      color: var(--accent-cyan);
+      font-weight: 600;
+    }
+    .message-text tr:nth-child(even) {
+      background: rgba(255, 255, 255, 0.02);
+    }
+    
+    .message-text blockquote {
+      border-left: 3px solid var(--accent-blue);
+      padding-left: 12px;
+      color: var(--text-muted);
+      margin: 12px 0;
+      font-style: italic;
+    }
+
+    .message-image {
+      max-width: 100%;
+      max-height: 240px;
+      border-radius: 8px;
+      margin-top: 8px;
+      border: 1px solid var(--border-color);
+      box-shadow: var(--shadow-glow);
+    }
+
+    /* Embedded Tool Status cards */
+    .tool-execution-card {
+      background: rgba(0, 102, 255, 0.03);
+      border: 1px solid rgba(0, 102, 255, 0.1);
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 12px;
+      margin-top: 6px;
+      font-family: var(--font-mono);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text-muted);
+    }
+
+    .tool-icon-spin {
+      width: 12px;
+      height: 12px;
+      border: 2px solid rgba(0, 102, 255, 0.1);
+      border-top-color: var(--accent-cyan);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    /* Input Footer Block */
+    .chat-footer {
+      padding: 20px 24px;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    /* Image Preview Tray */
+    .image-preview-tray {
+      display: none;
+      position: relative;
+      align-self: flex-start;
+      margin-bottom: 4px;
+    }
+
+    .image-preview-tray img {
+      height: 60px;
+      border-radius: 6px;
+      border: 1px solid var(--accent-cyan);
+      box-shadow: var(--shadow-glow);
+    }
+
+    .image-preview-tray .remove-preview {
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      background: var(--danger);
+      color: white;
+      border: none;
+      border-radius: 50%;
+      width: 16px;
+      height: 16px;
+      font-size: 10px;
+      font-weight: bold;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    }
+
+    .chat-input-row {
+      display: flex;
+      align-items: flex-end;
+      gap: 12px;
+    }
+
+    .input-wrapper {
+      flex: 1;
+      background: rgba(2, 3, 7, 0.6);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 8px 12px;
+      display: flex;
+      align-items: flex-end;
+      gap: 10px;
+      transition: all 0.2s ease;
+    }
+
+    .input-wrapper:focus-within {
+      border-color: var(--accent-cyan);
+      box-shadow: 0 0 10px rgba(0, 195, 255, 0.15);
+    }
+
+    .input-wrapper textarea {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      font-size: 14px;
+      resize: none;
+      max-height: 120px;
+      min-height: 24px;
+      padding: 2px 0;
+      line-height: 1.4;
+    }
+
+    .icon-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+    }
+
+    .icon-btn:hover {
+      color: var(--text-main);
+      background-color: rgba(255, 255, 255, 0.05);
+    }
+
+    .icon-btn.active {
+      color: var(--accent-cyan);
+      text-shadow: var(--shadow-glow);
+    }
+
+    .interrupt-pulse-btn {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid var(--danger);
+      color: var(--danger);
+      font-weight: 500;
+      font-size: 12px;
+      padding: 8px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: none;
+    }
+
+    .interrupt-pulse-btn:hover {
+      background: var(--danger);
+      color: white;
+      box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+    }
+
+    /* --- LOGS TAB STYLE --- */
+    .logs-layout {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      padding: 24px;
+      gap: 16px;
+    }
+
+    .logs-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .console-panel {
+      flex: 1;
+      background: #020306;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: #38bdf8;
+      padding: 16px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      line-height: 1.5;
+      box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.8);
+    }
+
+    /* --- CONFIG TAB STYLE --- */
+    .config-layout {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      padding: 24px;
+      overflow-y: auto;
+      gap: 20px;
+    }
+
+    .config-header {
+      margin-bottom: 8px;
+    }
+
+    .config-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 20px;
+    }
+
+    .config-section {
+      background: rgba(255, 255, 255, 0.01);
+      border: 1px solid rgba(255, 255, 255, 0.03);
+      border-radius: 10px;
+      padding: 16px;
+    }
+
+    .config-section h3 {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--accent-cyan);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      padding-bottom: 6px;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+
+    .form-group label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .reload-badge {
+      font-size: 9px;
+      color: var(--warning);
+      text-transform: uppercase;
+      font-weight: bold;
+      letter-spacing: 0.5px;
+    }
+
+    .form-group input, .form-group select {
+      background: rgba(2, 3, 7, 0.8);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-family: var(--font-sans);
+      font-size: 13px;
+      outline: none;
+    }
+
+    .form-group input:focus, .form-group select:focus {
+      border-color: var(--accent-cyan);
+    }
+
+    /* Modal dialog */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.8);
+      backdrop-filter: blur(4px);
+      z-index: 2000;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-card {
+      width: 450px;
+      padding: 24px;
+      background: var(--bg-dark);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      box-shadow: var(--shadow-glow-strong);
+      text-align: center;
+    }
+
+    .modal-card h2 {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--warning);
+      margin-bottom: 12px;
+    }
+
+    .modal-card p {
+      color: var(--text-muted);
+      font-size: 13px;
+      line-height: 1.5;
+      margin-bottom: 20px;
+    }
+
+    .modal-buttons {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+    }
+    
+    /* Dedicated Proper Scrollbar for Logs panel */
+    .console-panel::-webkit-scrollbar {
+      width: 10px !important;
+      height: 10px !important;
+      display: block !important;
+    }
+    .console-panel::-webkit-scrollbar-track {
+      background: rgba(2, 3, 7, 0.8) !important;
+      border-radius: 8px !important;
+    }
+    .console-panel::-webkit-scrollbar-thumb {
+      background: rgba(0, 102, 255, 0.4) !important;
+      border-radius: 8px !important;
+      border: 2px solid #020306 !important;
+    }
+    .console-panel::-webkit-scrollbar-thumb:hover {
+      background: rgba(0, 195, 255, 0.7) !important;
+    }
+
+    /* Switch Premium Toggle Styling */
+    .slider-premium {
+      background-color: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+    }
+    .switch-premium input:checked + .slider-premium {
+      background-color: rgba(0, 243, 255, 0.2);
+      border-color: var(--accent-cyan);
+      box-shadow: 0 0 8px rgba(0, 243, 255, 0.3);
+    }
+    .slider-premium:before {
+      position: absolute;
+      content: "";
+      height: 14px;
+      width: 14px;
+      left: 2px;
+      bottom: 2px;
+      background-color: var(--text-muted);
+      transition: .3s;
+      border-radius: 50%;
+    }
+    .switch-premium input:checked + .slider-premium:before {
+      transform: translateX(20px);
+      background-color: var(--accent-cyan);
+    }
+  </style>
+</head>
+<body>
+  <div class="titlebar">
+    <div class="brand">
+      <svg class="brand-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4.5 16.5L12 3l7.5 13.5M7 12h10M12 3v13.5"></path>
+        <circle cx="12" cy="18" r="1.5" fill="currentColor"></circle>
+      </svg>
+      ADAM
+    </div>
+    <div class="window-controls">
+      <button class="control-btn" onclick="window.api.windowControl('minimize')">—</button>
+      <button class="control-btn" onclick="window.api.windowControl('maximize')">🗖</button>
+      <button class="control-btn close-btn" onclick="window.api.windowControl('close')">×</button>
+    </div>
+  </div>
+
+  <div class="app-container">
+    <div class="window-body">
+      <!-- Mobile Top Navigation Header -->
+      <div class="mobile-nav-bar" style="display: none;">
+        <button class="mobile-menu-btn" id="mobile-hamburger-btn">☰</button>
+        <div class="mobile-title" id="mobile-active-session-title">Adam</div>
+        <button class="mobile-menu-btn" id="mobile-chats-btn">💬</button>
+      </div>
+
+      <!-- Backdrop overlay for slide-out menus -->
+      <div class="sidebar-overlay" id="mobile-sidebar-overlay"></div>
+
+      <!-- SIDEBAR -->
+      <div class="app-sidebar">
+        <div class="nav-tabs">
+          <div class="nav-tab active" data-tab="chat">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
+            </svg>
+            Chat
+          </div>
+          <div class="nav-tab" data-tab="tools">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path>
+            </svg>
+            Tools
+          </div>
+          <div class="nav-tab" data-tab="voice" id="tab-voice" style="display: none;">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
+            </svg>
+            Voice
+          </div>
+          <div class="nav-tab" data-tab="logs">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+            </svg>
+            Logs
+          </div>
+          <div class="nav-tab" data-tab="config">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+            </svg>
+            Settings
+          </div>
+          
+          <div class="nav-tab" data-tab="sharing">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 10.742a3 3 0 110 5.516m6.632-5.516a3 3 0 110 5.516m0 0L10.25 14.75M12 21H3a2 2 0 01-2-2V5a2 2 0 012-2h9m4 8h6m-3-3l3 3-3 3"></path>
+            </svg>
+            Web Sharing
+          </div>
+          
+          <div class="nav-tab" data-tab="remote">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+            </svg>
+            Remote Control
+          </div>
+          
+          <div class="nav-tab" id="btn-unload-models">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"></path>
+            </svg>
+            Configure Models
+          </div>
+          
+          <div class="nav-tab" id="btn-passive-mode" style="display: none;">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"></path>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"></path>
+            </svg>
+            Passive Mode
+          </div>
+
+          <div class="nav-tab" id="btn-exit-app">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
+            </svg>
+            Exit Application
+          </div>
+        </div>
+
+        <!-- RESOURCE MONITOR -->
+        <div class="resource-monitor">
+          <div class="resource-title">Resources</div>
+          
+          <div class="stat-row">
+            <div class="stat-header">
+              <span>CPU Usage</span>
+              <span id="cpu-val">0%</span>
+            </div>
+            <div class="stat-bar-bg"><div class="stat-bar-fill" id="cpu-bar"></div></div>
+          </div>
+          
+          <div class="stat-row">
+            <div class="stat-header">
+              <span>GPU Core</span>
+              <span id="gpu-val">0%</span>
+            </div>
+            <div class="stat-bar-bg"><div class="stat-bar-fill" id="gpu-bar"></div></div>
+          </div>
+
+          <div class="stat-row">
+            <div class="stat-header">
+              <span>VRAM Usage</span>
+              <span id="vram-val">0 GB / 0 GB</span>
+            </div>
+            <div class="stat-bar-bg"><div class="stat-bar-fill" id="vram-bar"></div></div>
+          </div>
+
+          <div class="stat-row" style="margin-top: 4px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 8px;">
+            <div class="stat-header">
+              <span>Context size</span>
+              <span id="context-turns-val" style="font-family: var(--font-mono); color: var(--accent-cyan)">0 turns</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- MAIN CONTENT FRAME -->
+      <div class="app-content">
+        
+        <!-- CHAT TAB -->
+        <div class="tab-panel active" id="panel-chat">
+          <div class="chat-layout">
+            <!-- Chat Sessions Sidebar -->
+            <div class="chat-sessions-sidebar">
+              <button class="new-session-btn" id="btn-new-session">
+                <span style="font-size: 14px; font-weight: bold;">+</span> New Session
+              </button>
+              <div class="session-list" id="session-list">
+                <!-- Session items loaded dynamically -->
+              </div>
+            </div>
+
+            <!-- Active Chat Window -->
+            <div class="chat-view">
+              <div class="chat-header">
+                <h2 id="active-session-title">Chat Session</h2>
+                <div class="speech-status-indicator" style="gap: 12px;">
+                  <button id="btn-compress-context" class="glow-btn" style="padding: 4px 10px; font-size: 11px; background: transparent; border: 1px solid var(--border-color); display: flex; align-items: center; gap: 4px; border-radius: 6px; cursor: pointer;">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 12px; height: 12px;">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 13l-7 7-7-7m14-6l-7 7-7-7"></path>
+                    </svg>
+                    Compress Context
+                  </button>
+
+                  <button id="btn-clear-chat" class="glow-btn" style="padding: 4px 10px; font-size: 11px; background: transparent; border: 1px solid var(--border-color); display: flex; align-items: center; gap: 4px; border-radius: 6px; cursor: pointer;">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 12px; height: 12px;">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                    </svg>
+                    Clear Chat
+                  </button>
+                  <div class="status-dot" id="voice-dot"></div>
+                  <span id="voice-status-text">Mute voice loop</span>
+                  <button class="icon-btn" id="btn-toggle-mic" title="Toggle voice pipeline" style="margin-left: 2px;">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 16px; height: 16px;">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Message list -->
+              <div class="message-list" id="message-list">
+                <!-- Messages populated by JS -->
+              </div>
+
+              <!-- Input form footer -->
+              <div class="chat-footer">
+                <!-- File Preview Tray -->
+                <div class="file-preview-tray" id="file-preview-tray" style="display: none; display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; align-self: flex-start; max-width: 100%;">
+                  <!-- File previews will be generated dynamically -->
+                </div>
+                
+                <div class="chat-input-row">
+                  <div class="input-wrapper">
+                    <!-- File Input trigger -->
+                    <button class="icon-btn" id="btn-attach-file" title="Attach Image or PDF">
+                      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 20px; height: 20px;">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path>
+                      </svg>
+                    </button>
+                    <input type="file" id="file-input-attachments" accept="image/*,.pdf" multiple style="display: none;">
+
+                    <textarea id="chat-textarea" placeholder="Type a message or speak..." rows="1"></textarea>
+                    
+                    <button class="icon-btn" id="btn-toggle-playback-speak" title="Speech synthesis output" class="active">
+                      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 20px; height: 20px;">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"></path>
+                      </svg>
+                    </button>
+                  </div>
+
+                  <button class="interrupt-pulse-btn" id="btn-interrupt">INTERRUPT</button>
+                  
+                  <button id="btn-send-message" class="glow-btn" style="padding: 12px;">
+                    <svg style="width: 18px; height: 18px" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- LOGS TAB -->
+        <div class="tab-panel" id="panel-logs">
+          <div class="logs-layout">
+            <div class="logs-header">
+              <h2 style="font-size: 15px; font-weight: 600;">System Logs</h2>
+              <div style="display: flex; gap: 12px; align-items: center;">
+                <label for="log-verbosity" style="font-size: 13px; color: var(--text-muted);">Verbosity:</label>
+                <select id="log-verbosity" style="background: rgba(2, 3, 7, 0.8); border: 1px solid var(--border-color); color: var(--text-main); padding: 4px 8px; border-radius: 6px; font-size: 12px; outline: none; cursor: pointer;">
+                  <option value="errors" selected>Errors Only</option>
+                  <option value="warnings">Warnings & Errors</option>
+                  <option value="all">All Logs</option>
+                </select>
+                <button id="btn-clear-logs" class="glow-btn" style="background: transparent; border: 1px solid var(--border-color); padding: 6px 12px; font-size: 12px;">Clear View</button>
+                <button id="btn-copy-logs" class="glow-btn" style="padding: 6px 12px; font-size: 12px;">Copy Logs</button>
+              </div>
+            </div>
+            <div class="console-panel" id="console-logs"></div>
+          </div>
+        </div>
+
+        <!-- CONFIG TAB -->
+        <div class="tab-panel" id="panel-config">
+          <div class="config-layout">
+            <div class="config-header">
+              <h2 style="font-size: 16px; font-weight: 600; margin-bottom: 4px;">Engine Configuration</h2>
+              <p style="color: var(--text-muted); font-size: 13px;">Manage hyperparameters, audio limits, and active Llama options.</p>
+            </div>
+
+            <div class="config-grid">
+              <!-- Llama block -->
+              <div class="config-section">
+                <h3>Llama Server Parameters</h3>
+                
+                <div class="form-group">
+                  <label>Host</label>
+                  <input type="text" id="cfg-llama-host">
+                </div>
+                <div class="form-group">
+                  <label>Port</label>
+                  <input type="number" id="cfg-llama-port">
+                </div>
+                <div class="form-group">
+                  <label>Context Limit (-c)</label>
+                  <input type="number" id="cfg-llama-ctx">
+                </div>
+                <div class="form-group">
+                  <label>GPU Layers (-ngl)</label>
+                  <input type="number" id="cfg-llama-ngl">
+                </div>
+                <div class="form-group">
+                  <label>Flash Attention</label>
+                  <select id="cfg-llama-flash">
+                    <option value="on">On</option>
+                    <option value="off">Off</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Audio Block -->
+              <div class="config-section">
+                <h3>VAD & Audio Stream</h3>
+                
+                <div class="form-group">
+                  <label>Sample Rate (Hz)</label>
+                  <input type="number" id="cfg-audio-rate">
+                </div>
+                <div class="form-group">
+                  <label>Frame Duration (ms)</label>
+                  <input type="number" id="cfg-audio-frame">
+                </div>
+                <div class="form-group">
+                  <label>VAD Aggressiveness</label>
+                  <select id="cfg-audio-vad">
+                    <option value="1">1 (Low)</option>
+                    <option value="2">2 (Medium)</option>
+                    <option value="3">3 (High)</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>Min Speech Duration (s)</label>
+                  <input type="number" step="0.1" id="cfg-audio-min-dur">
+                </div>
+                <div class="form-group">
+                  <label>Max Speech Duration (s)</label>
+                  <input type="number" step="0.5" id="cfg-audio-max-dur">
+                </div>
+              </div>
+
+              <!-- Models Block -->
+              <div class="config-section">
+                <h3>Voice & STT Models</h3>
+                
+                <div class="form-group">
+                  <label>STT WhisperX Model Size</label>
+                  <select id="cfg-model-stt-size">
+                    <option value="tiny">Tiny</option>
+                    <option value="base">Base</option>
+                    <option value="small">Small</option>
+                    <option value="medium">Medium</option>
+                    <option value="large-v3">Large V3</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>STT Compute Device</label>
+                  <select id="cfg-model-stt-device">
+                    <option value="cpu">CPU</option>
+                    <option value="cuda">CUDA (GPU)</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>TTS Repo ID</label>
+                  <input type="text" id="cfg-model-tts-repo">
+                </div>
+                <div class="form-group">
+                  <label>TTS Compute Device</label>
+                  <select id="cfg-model-tts-device">
+                    <option value="cpu">CPU</option>
+                    <option value="cuda">CUDA (GPU)</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Context Management -->
+              <div class="config-section">
+                <h3>Context Memory Optimizers</h3>
+                
+                <div class="form-group">
+                  <label>Max Chat History turns</label>
+                  <input type="number" id="cfg-model-hist-turns">
+                </div>
+                <div class="form-group">
+                  <label>Max Tool Output Chars</label>
+                  <input type="number" id="cfg-model-tool-len">
+                </div>
+                <div class="form-group">
+                  <label>Context Compression Threshold (Tokens)</label>
+                  <input type="number" id="cfg-model-compression">
+                </div>
+                <div class="form-group">
+                  <label>Max Output Tokens</label>
+                  <input type="number" id="cfg-model-max-output">
+                </div>
+              </div>
+            </div>
+
+            <!-- Save Action Row -->
+            <div style="display: flex; justify-content: flex-end; margin-top: 10px;">
+              <button id="btn-save-config" class="glow-btn">
+                SAVE CONFIGURATION
+              </button>
+            </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TOOLS PANEL -->
+        <div class="tab-panel" id="panel-tools">
+          <div class="tools-layout" style="width: 100%; height: 100%; display: flex; flex-direction: column; padding: 24px; overflow-y: auto; gap: 16px;">
+            <div class="tools-header">
+              <h2 style="font-size: 16px; font-weight: 600; margin-bottom: 4px;">Agent Capabilities</h2>
+              <p style="color: var(--text-muted); font-size: 13px;">Enable or disable mathematical, search, system, or media tools visible to the model.</p>
+            </div>
+            
+            <div id="tools-container" style="display: flex; flex-direction: column; gap: 14px;">
+              <!-- Dynamic tools checklist grouped by category will be injected here -->
+            </div>
+          </div>
+        </div>
+
+        <!-- VOICE PANEL -->
+        <div class="tab-panel" id="panel-voice">
+          <div class="voice-layout" style="width: 100%; height: 100%; display: flex; flex-direction: column; padding: 24px; overflow-y: auto; gap: 16px;">
+            <div class="voice-header">
+              <h2 style="font-size: 16px; font-weight: 600; margin-bottom: 4px;">Auditory Textures</h2>
+              <p style="color: var(--text-muted); font-size: 13px;">Choose Qwen TTS vocal speaker presets for multilingual speech synthesis.</p>
+            </div>
+            
+            <div class="voice-grid" id="voice-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; margin-top: 10px;">
+              <!-- Dynamic voice cards will be injected here -->
+            </div>
+          </div>
+        </div>
+
+        <!-- SHARING PANEL -->
+        <div class="tab-panel" id="panel-sharing">
+          <div class="sharing-layout" style="width: 100%; height: 100%; display: flex; flex-direction: column; padding: 24px; overflow-y: auto; gap: 20px;">
+            <div class="sharing-header">
+              <h2 style="font-size: 16px; font-weight: 600; margin-bottom: 4px;">Web Sharing & Remote Access</h2>
+              <p style="color: var(--text-muted); font-size: 13px;">Host your personal webpage version of Adam via a secure tunnel from your local machine. Share it with your mobile phone or other devices.</p>
+            </div>
+            
+            <div class="sharing-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+              <!-- Settings Card -->
+              <div class="config-section" style="margin-bottom: 0;">
+                <h3>Tunnel Configuration</h3>
+                
+                <div class="form-group">
+                  <label>Tunnel Service</label>
+                  <select id="share-service">
+                    <option value="ngrok">Ngrok (Authtoken + Static Domain)</option>
+                    <option value="localhostrun">localhost.run (Zero-Config - Fast & Temporary URL)</option>
+                  </select>
+                </div>
+                
+                <div class="form-group" id="ngrok-token-group" style="display: none;">
+                  <label>Ngrok Authtoken</label>
+                  <input type="text" id="share-ngrok-token" placeholder="Paste your Ngrok authtoken here">
+                </div>
+                
+                <div class="form-group" id="ngrok-domain-group" style="display: none;">
+                  <label>Ngrok Static Domain</label>
+                  <input type="text" id="share-ngrok-domain" placeholder="e.g. your-subdomain.ngrok-free.app">
+                  <p style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Creates a permanent, fixed URL using Ngrok's free static domain tier.</p>
+                </div>
+                
+                <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px; margin-top: 10px;">
+                  <input type="checkbox" id="share-autostart" style="width: auto; cursor: pointer;">
+                  <label for="share-autostart" style="cursor: pointer; display: inline; font-size: 13px;">Auto-start Web Sharing on app launch</label>
+                </div>
+                
+                <!-- Remote Control Toggle Card -->
+                <div class="remote-toggle-card" style="background: rgba(0, 243, 255, 0.03); border: 1px solid rgba(0, 243, 255, 0.15); border-radius: 8px; padding: 12px 16px; margin: 16px 0; display: flex; align-items: center; justify-content: space-between; gap: 16px; transition: all 0.3s ease; box-shadow: 0 0 15px rgba(0, 243, 255, 0.05);">
+                  <div style="display: flex; flex-direction: column; gap: 4px;">
+                    <span style="font-size: 13px; font-weight: 600; color: var(--text-main); display: flex; align-items: center; gap: 6px;">
+                      <svg style="width: 14px; height: 14px; stroke: var(--accent-cyan);" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+                      </svg>
+                      Enable Remote Control
+                    </span>
+                    <span style="font-size: 11px; color: var(--text-muted);">Allows remote mouse, keyboard, and file actions from client devices.</span>
+                  </div>
+                  <label class="switch-premium" style="position: relative; display: inline-block; width: 40px; height: 20px; flex-shrink: 0;">
+                    <input type="checkbox" id="share-remote-control" style="opacity: 0; width: 0; height: 0; margin: 0; cursor: pointer;">
+                    <span class="slider-premium" style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; transition: .3s; border-radius: 20px;"></span>
+                  </label>
+                </div>
+                
+                <!-- Email Integration -->
+                <div style="border-top: 1px solid var(--border-color); margin-top: 16px; padding-top: 16px;">
+                  <h4 style="font-size: 13px; font-weight: 600; margin-bottom: 12px; color: var(--text-main);">Email Notification Integration</h4>
+                  
+                  <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px; margin-bottom: 12px;">
+                    <input type="checkbox" id="share-email-enabled" style="width: auto; cursor: pointer;">
+                    <label for="share-email-enabled" style="cursor: pointer; display: inline; font-size: 12px; font-weight: 500;">Enable Email Notification</label>
+                  </div>
+
+                  <div id="email-settings-group" style="display: none; flex-direction: column; gap: 10px;">
+                    <div class="form-group" style="margin-bottom: 0;">
+                      <label style="font-size: 11px;">Email Provider</label>
+                      <select id="share-email-provider" style="padding: 6px 10px; font-size: 12px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); cursor: pointer; width: 100%;">
+                        <option value="gmail">Gmail</option>
+                        <option value="outlook">Outlook / Hotmail</option>
+                        <option value="yahoo">Yahoo Mail</option>
+                        <option value="custom">Custom SMTP Server</option>
+                      </select>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 3fr 1fr; gap: 10px;">
+                      <div class="form-group" style="margin-bottom: 0;">
+                        <label style="font-size: 11px;">SMTP Host</label>
+                        <input type="text" id="share-email-host" placeholder="smtp.gmail.com" style="padding: 6px 10px; font-size: 12px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
+                      </div>
+                      <div class="form-group" style="margin-bottom: 0;">
+                        <label style="font-size: 11px;">Port</label>
+                        <input type="number" id="share-email-port" value="587" style="padding: 6px 10px; font-size: 12px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
+                      </div>
+                    </div>
+                    
+                    <div class="form-group" style="margin-bottom: 0;">
+                      <label style="font-size: 11px;">Sender Email (SMTP User)</label>
+                      <input type="text" id="share-email-user" placeholder="your-email@gmail.com" style="padding: 6px 10px; font-size: 12px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 0;">
+                      <label style="font-size: 11px;">App Password / SMTP Password</label>
+                      <input type="password" id="share-email-pass" placeholder="Enter App Password" style="padding: 6px 10px; font-size: 12px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 0;">
+                      <label style="font-size: 11px;">Recipient Email</label>
+                      <input type="text" id="share-email-recipient" placeholder="recipient-email@gmail.com" style="padding: 6px 10px; font-size: 12px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
+                    </div>
+
+                    <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px; margin-top: 6px;">
+                      <input type="checkbox" id="share-email-on-startup" style="width: auto; cursor: pointer;">
+                      <label for="share-email-on-startup" style="cursor: pointer; display: inline; font-size: 12px;">Send email on startup</label>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Pushbullet Integration -->
+                <div style="border-top: 1px solid var(--border-color); margin-top: 16px; padding-top: 16px;">
+                  <h4 style="font-size: 13px; font-weight: 600; margin-bottom: 12px; color: var(--text-main);">Pushbullet Notification Integration</h4>
+                  
+                  <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px; margin-bottom: 12px;">
+                    <input type="checkbox" id="share-pushbullet-enabled" style="width: auto; cursor: pointer;">
+                    <label for="share-pushbullet-enabled" style="cursor: pointer; display: inline; font-size: 12px; font-weight: 500;">Enable Pushbullet Notification</label>
+                  </div>
+
+                  <div id="pushbullet-settings-group" style="display: none; flex-direction: column; gap: 10px;">
+                    <div class="form-group" style="margin-bottom: 0;">
+                      <label style="font-size: 11px;">Pushbullet Access Token</label>
+                      <input type="password" id="share-pushbullet-token" placeholder="o.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" style="padding: 6px 10px; font-size: 12px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main);">
+                    </div>
+                  </div>
+                </div>
+                
+                <div style="display: flex; gap: 12px; margin-top: 20px;">
+                  <button id="btn-save-sharing" class="glow-btn" style="padding: 10px 16px; cursor: pointer;">Save Config</button>
+                  <button id="btn-toggle-sharing" class="glow-btn" style="padding: 10px 16px; background: rgba(0, 102, 255, 0.15); border-color: rgba(0, 102, 255, 0.3); cursor: pointer;">Enable Web Sharing</button>
+                </div>
+              </div>
+              
+              <!-- Status / Connection Card -->
+              <div class="config-section" style="margin-bottom: 0; display: flex; flex-direction: column;">
+                <h3>Live Status</h3>
+                
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px;">
+                  <div id="share-status-dot" class="status-dot" style="background: var(--text-dim);"></div>
+                  <span id="share-status-text" style="font-weight: 500; font-size: 14px;">Offline</span>
+                </div>
+                
+                <div id="share-url-container" style="display: none; flex-direction: column; gap: 12px;">
+                  <div class="form-group">
+                    <label>Webpage URL</label>
+                    <div style="display: flex; gap: 8px;">
+                      <input type="text" id="share-url-input" readonly style="flex: 1; font-family: var(--font-mono); font-size: 12px; background: rgba(0,0,0,0.3); color: var(--text-main); border: 1px solid var(--border-color); padding: 8px 10px; border-radius: 6px;">
+                      <button id="btn-copy-share-url" class="glow-btn" style="padding: 8px 12px; cursor: pointer;">Copy</button>
+                    </div>
+                  </div>
+                  
+                  <!-- QR Code integration -->
+                  <div style="display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px; background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: 8px; margin-top: 8px;">
+                    <span style="font-size: 11px; color: var(--text-muted); font-weight: 500;">Scan QR code with your phone to open</span>
+                    <img id="share-qr-image" src="" alt="QR Code" style="width: 130px; height: 130px; border-radius: 4px; border: 4px solid white; background: white; display: none;">
+                    <div id="share-qr-loading" style="font-size: 11px; color: var(--text-muted);">Generating QR code...</div>
+                  </div>
+                </div>
+                
+                <div id="share-error-message" style="display: none; color: var(--danger); font-size: 12px; margin-top: 10px; padding: 8px 12px; background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.15); border-radius: 6px;">
+                  <!-- Error text goes here -->
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- REMOTE CONTROL PANEL -->
+        <div class="tab-panel" id="panel-remote">
+          <div class="remote-layout" style="width: 100%; height: 100%; display: flex; padding: 20px; gap: 20px; box-sizing: border-box; overflow: hidden;">
+            
+            <!-- COLUMN 1: SCREEN CONTROL -->
+            <div class="remote-col screen-col" style="flex: 1.2; display: flex; flex-direction: column; gap: 12px; height: 100%; min-width: 0;">
+              <div class="config-section" style="margin-bottom: 0; display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 16px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-shrink: 0;">
+                  <h3 style="margin-bottom: 0; border: none; padding-bottom: 0;">Device Screen</h3>
+                  <div style="display: flex; gap: 8px;">
+                    <button id="btn-refresh-screen" class="glow-btn" style="padding: 6px 14px; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--accent-cyan); background: rgba(0, 195, 255, 0.05); color: var(--accent-cyan); box-shadow: 0 0 8px rgba(0, 195, 255, 0.15); transition: all 0.2s ease; cursor: pointer;">
+                      <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 13px; height: 13px; display: inline-block; vertical-align: middle;">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"></path>
+                      </svg>
+                      Refresh Screen
+                    </button>
+                  </div>
+                </div>
+                
+                <!-- SCREENSHOT CANVAS CONTAINER -->
+                <div id="screen-container" style="flex: 1; background: #000; border: 1px solid var(--border-color); border-radius: 8px; position: relative; overflow: auto; display: flex; align-items: center; justify-content: center; min-height: 0;">
+                  <img id="screen-img" src="" alt="Screen Capture" style="max-width: 100%; max-height: 100%; object-fit: contain; cursor: crosshair; user-select: none; pointer-events: auto;">
+                  <div id="screen-marker" style="display: none; position: absolute; width: 12px; height: 12px; background: rgba(0, 195, 255, 0.8); border: 2px solid #fff; border-radius: 50%; pointer-events: none; transform: translate(-50%, -50%); box-shadow: 0 0 8px rgba(0, 195, 255, 1); z-index: 10;"></div>
+                  <div id="screen-drag-marker" style="display: none; position: absolute; width: 12px; height: 12px; background: rgba(239, 68, 68, 0.8); border: 2px solid #fff; border-radius: 50%; pointer-events: none; transform: translate(-50%, -50%); box-shadow: 0 0 8px rgba(239, 68, 68, 1); z-index: 10;"></div>
+                  <svg id="screen-drag-line" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 9;">
+                    <line x1="0" y1="0" x2="0" y2="0" stroke="rgba(0, 195, 255, 0.8)" stroke-width="2" stroke-dasharray="4" />
+                  </svg>
+                  <div id="screen-loading" style="position: absolute; display: flex; flex-direction: column; align-items: center; gap: 10px; color: var(--text-muted); font-size: 13px;">
+                    <div class="tool-icon-spin" style="width: 24px; height: 24px; border-width: 3px;"></div>
+                    Loading Screenshot...
+                  </div>
+                </div>
+                
+                <!-- ACTION CONTROLS BOX -->
+                <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 8px; flex-shrink: 0;">
+                  <div style="display: flex; gap: 10px; align-items: center;">
+                    <select id="action-select" style="background: rgba(2, 3, 7, 0.8); border: 1px solid var(--border-color); color: var(--text-main); padding: 8px 10px; border-radius: 6px; font-family: var(--font-sans); font-size: 13px; outline: none; cursor: pointer; flex: 1;">
+                      <option value="click">Left Click</option>
+                      <option value="double_click">Double Click</option>
+                      <option value="right_click">Right Click</option>
+                      <option value="drag">Click and Drag</option>
+                      <option value="type">Type Text</option>
+                      <option value="press_key">Press Special Key</option>
+                    </select>
+                    
+                    <button id="btn-execute-action" class="glow-btn" style="padding: 8px 20px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-weight: 600; background: var(--accent-grad); border: none; color: #fff; border-radius: 6px; box-shadow: 0 0 10px rgba(0, 195, 255, 0.3); transition: all 0.3s ease;">
+                      <svg style="width: 14px; height: 14px; stroke: currentColor;" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                      </svg>
+                      EXECUTE ACTION
+                    </button>
+                  </div>
+                  
+                  <!-- CONTEXTUAL INPUTS -->
+                  <div id="action-type-container" style="display: none;">
+                    <input type="text" id="action-text-input" placeholder="Type text to send to host..." style="width: 100%; background: rgba(2, 3, 7, 0.8); border: 1px solid var(--border-color); color: var(--text-main); padding: 8px 10px; border-radius: 6px; font-family: var(--font-sans); font-size: 13px; outline: none;">
+                  </div>
+                  
+                  <div id="action-key-container" style="display: none;">
+                    <select id="action-key-select" style="width: 100%; background: rgba(2, 3, 7, 0.8); border: 1px solid var(--border-color); color: var(--text-main); padding: 8px 10px; border-radius: 6px; font-family: var(--font-sans); font-size: 13px; outline: none; cursor: pointer;">
+                      <option value="enter">Enter</option>
+                      <option value="backspace">Backspace</option>
+                      <option value="tab">Tab</option>
+                      <option value="escape">Escape</option>
+                      <option value="space">Space</option>
+                      <option value="up">Arrow Up</option>
+                      <option value="down">Arrow Down</option>
+                      <option value="left">Arrow Left</option>
+                      <option value="right">Arrow Right</option>
+                      <option value="delete">Delete</option>
+                      <option value="pgup">Page Up</option>
+                      <option value="pgdn">Page Down</option>
+                      <option value="home">Home</option>
+                      <option value="end">End</option>
+                    </select>
+                  </div>
+                  
+                  <div id="action-drag-help" style="display: none; font-size: 11px; color: var(--accent-cyan); text-align: center; margin-top: 2px;">
+                    Tap screen to set start point, then tap again to set drag target.
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- COLUMN 2: FILE EXPLORER -->
+            <div class="remote-col explorer-col" style="flex: 1; display: flex; flex-direction: column; gap: 12px; height: 100%; min-width: 0;">
+              <div class="config-section" style="margin-bottom: 0; display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 16px;">
+                <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; flex-shrink: 0;">
+                  <h3 style="margin-bottom: 0; border: none; padding-bottom: 0;">File Explorer</h3>
+                  
+                  <!-- Current path and control bar -->
+                  <div style="display: flex; gap: 8px; align-items: center; margin-top: 4px;">
+                    <button id="btn-file-up" class="glow-btn" style="padding: 6px 10px; font-size: 11px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; cursor: pointer;" title="Go up to parent directory">
+                      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 12px; height: 12px;">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"></path>
+                      </svg>
+                      Up
+                    </button>
+                    <button id="btn-file-root" class="glow-btn" style="padding: 6px 10px; font-size: 11px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; cursor: pointer;" title="Go to My Computer (Root Drives)">
+                      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 12px; height: 12px;">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+                      </svg>
+                      Computer
+                    </button>
+                    <input type="text" id="explorer-path-input" readonly style="flex: 1; font-family: var(--font-mono); font-size: 11px; background: rgba(0,0,0,0.3); color: var(--text-main); border: 1px solid var(--border-color); padding: 6px 8px; border-radius: 6px; outline: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                  </div>
+                </div>
+                
+                <!-- HIERARCHICAL TREE CONTAINER -->
+                <div id="explorer-tree" style="flex: 1; overflow-y: auto; background: rgba(2, 3, 7, 0.4); border: 1px solid var(--border-color); border-radius: 8px; padding: 12px; font-size: 13px; font-family: var(--font-sans); min-height: 0; user-select: none;">
+                  <!-- Dynamically populated storage tree -->
+                </div>
+                
+                <!-- FLOATING ACTION BAR FOR DOWNLOADS -->
+                <div id="explorer-actions" style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center; padding: 10px; background: rgba(0, 102, 255, 0.05); border: 1px solid rgba(0, 102, 255, 0.15); border-radius: 6px; flex-shrink: 0; display: none;">
+                  <span id="selected-count-text" style="font-size: 12px; color: var(--text-muted);">0 items selected</span>
+                  <div style="display: flex; gap: 8px;">
+                    <button id="btn-clear-selection" class="glow-btn" style="padding: 6px 12px; font-size: 11px; background: transparent; border-color: transparent; color: var(--text-muted); cursor: pointer;">Clear</button>
+                    <button id="btn-download-selected" class="glow-btn" style="padding: 6px 14px; font-size: 11px; background: var(--accent-grad); border-color: rgba(0,102,255,0.4); color: white; cursor: pointer;">Download</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- RELOAD CONFIRMATION MODAL -->
+  <div class="modal-overlay" id="reload-modal">
+    <div class="modal-card">
+      <h2>Reload Engines?</h2>
+      <p id="reload-reasons-text">Some changed settings require reloading the model pipelines. Do you want to reload the engines now to apply these configurations?</p>
+      <div class="modal-buttons">
+        <button id="btn-modal-cancel" class="glow-btn" style="background: transparent; border: 1px solid var(--border-color)">Cancel</button>
+        <button id="btn-modal-confirm" class="glow-btn">Reload Engines</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="main-renderer.js"></script>
+</body>
+</html>

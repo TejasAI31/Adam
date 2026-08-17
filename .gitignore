@@ -1,0 +1,95 @@
+# ==========================================
+# GITIGNORE FOR ADAM (HYBRID PYTHON/ELECTRON)
+# ==========================================
+
+# --- Virtual Environments (Python) ---
+env/
+venv/
+backend/env/
+backend/venv/
+.env
+.venv
+poetry.lock
+pip-log.txt
+pip-delete-this-directory.txt
+
+# --- Node / Electron Dependencies & Caches ---
+node_modules/
+electron/node_modules/
+.npm/
+.eslintcache
+.parcel-cache
+.cache/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- Project Build Outputs ---
+# Keep root /build/ directory (contains build.py/build.bat)
+# Ignore compiler-specific build caches and final compiled installer dists
+/dist/
+/backend/build/
+/backend/dist/
+/electron/build/
+/electron/dist/
+/electron/out/
+/build/*.log
+*.exe
+*.msi
+*.zip
+*.tar.gz
+*.tgz
+
+# --- Python Compiled Files & Caches ---
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+
+# --- Dynamic Shared Binaries ---
+# Track backend/ffmpeg-shared/ as it is required for building/running
+# backend/ffmpeg-shared/ (removed from ignore to track in repository)
+
+# --- Local User Configurations & Sessions (State) ---
+backend/config/settings.json
+backend/config/sessions.json
+
+# --- Large Model Files & Weights ---
+*.gguf
+*.bin
+*.onnx
+*.pt
+*.pth
+*.safetensors
+**/models/
+**/weights/
+**/model_weights/
+
+# --- Large Temporary Files ---
+search_results.txt
+*.log
+*.tmp
+*.bak
+
+# --- OS / IDE Specific ---
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# --- Whitelist overrides ---
+# Force Git to track everything in ffmpeg-shared including .exe files
+!backend/ffmpeg-shared/**

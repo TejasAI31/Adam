@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Adam - Initializing</title>
+  <link rel="icon" type="image/svg+xml" href='data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%2300f3ff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5L12 3l7.5 13.5M7 12h10M12 3v13.5"/><circle cx="12" cy="18" r="1.5" fill="%2300f3ff"/></svg>'>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    html {
+      background: transparent !important;
+    }
+    body {
+      padding: 0;
+      background-color: var(--bg-darker);
+      border-radius: 28px;
+      border: 1px solid var(--border-color);
+      overflow: hidden;
+    }
+
+    .titlebar {
+      border-top-left-radius: 28px;
+      border-top-right-radius: 28px;
+    }
+
+    .window-content {
+      padding: 24px 40px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      height: calc(100vh - 38px);
+      align-items: center;
+      justify-content: center;
+      border-bottom-left-radius: 28px;
+      border-bottom-right-radius: 28px;
+    }
+
+    .status-title {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 20px;
+      text-align: center;
+      letter-spacing: 0.5px;
+      background: var(--accent-grad);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    /* Core Pulsing Orb Animation */
+    .neural-core-container {
+      position: relative;
+      width: 80px;
+      height: 80px;
+      margin-bottom: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .core-orbit-outer {
+      position: absolute;
+      width: 74px;
+      height: 74px;
+      border: 1px dashed rgba(0, 195, 255, 0.4);
+      border-radius: 50%;
+      animation: rotate-clockwise 16s linear infinite;
+    }
+
+    .core-orbit-inner {
+      position: absolute;
+      width: 52px;
+      height: 52px;
+      border: 1px dotted rgba(0, 102, 255, 0.5);
+      border-radius: 50%;
+      animation: rotate-counter 10s linear infinite;
+    }
+
+    .core-pulse-glow {
+      position: absolute;
+      width: 36px;
+      height: 36px;
+      background: rgba(0, 195, 255, 0.12);
+      border-radius: 50%;
+      filter: blur(8px);
+      animation: glow-pulse 3s infinite ease-in-out;
+    }
+
+    .core-pulse {
+      width: 26px;
+      height: 26px;
+      background: radial-gradient(circle, var(--accent-cyan) 0%, var(--accent-blue) 100%);
+      border-radius: 50%;
+      box-shadow: 0 0 16px rgba(0, 195, 255, 0.7), 0 0 30px rgba(0, 102, 255, 0.3);
+      animation: core-breathe 2s infinite ease-in-out;
+      transition: all 0.5s ease;
+      z-index: 2;
+    }
+
+    .core-particles {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      animation: rotate-clockwise 12s linear infinite;
+    }
+
+    .particle {
+      position: absolute;
+      width: 4px;
+      height: 4px;
+      background: var(--accent-cyan);
+      border-radius: 50%;
+      box-shadow: 0 0 6px var(--accent-cyan);
+    }
+
+    .particle.p1 { top: 12px; left: 50%; transform: translateX(-50%); }
+    .particle.p2 { bottom: 12px; left: 50%; transform: translateX(-50%); }
+    .particle.p3 { left: 12px; top: 50%; transform: translateY(-50%); }
+    .particle.p4 { right: 12px; top: 50%; transform: translateY(-50%); }
+
+    @keyframes rotate-clockwise {
+      100% { transform: rotate(360deg); }
+    }
+
+    @keyframes rotate-counter {
+      100% { transform: rotate(-360deg); }
+    }
+
+    @keyframes glow-pulse {
+      0%, 100% { opacity: 0.5; transform: scale(0.9); }
+      50% { opacity: 1.0; transform: scale(1.1); }
+    }
+
+    @keyframes core-breathe {
+      0%, 100% { transform: scale(0.95); opacity: 0.9; box-shadow: 0 0 14px rgba(0, 195, 255, 0.6); }
+      50% { transform: scale(1.1); opacity: 1.0; box-shadow: 0 0 24px rgba(0, 195, 255, 0.9), 0 0 12px rgba(0, 102, 255, 0.5); }
+    }
+
+    /* Steps checklist with connecting timeline */
+    .steps-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      width: 100%;
+      max-width: 440px;
+      margin-bottom: 20px;
+      position: relative;
+    }
+
+    .timeline-track {
+      position: absolute;
+      top: 10px;
+      bottom: 10px;
+      left: 9px;
+      width: 2px;
+      background: rgba(255, 255, 255, 0.04);
+      z-index: 0;
+      border-radius: 1px;
+      overflow: hidden;
+    }
+
+    .timeline-fill {
+      width: 100%;
+      height: 0%;
+      background: linear-gradient(to bottom, var(--success), #00ffaa);
+      box-shadow: 0 0 8px var(--success);
+      transition: height 0.4s ease;
+    }
+
+    .step-item {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-size: 13px;
+      color: var(--text-dim);
+      font-weight: 500;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .step-item.active {
+      color: var(--text-main);
+      text-shadow: 0 0 8px rgba(0, 195, 255, 0.3);
+    }
+
+    .step-item.completed {
+      color: var(--success);
+    }
+
+    .step-item.failed {
+      color: var(--danger);
+    }
+
+    .step-icon {
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      border: 1.5px solid var(--text-dim);
+      font-size: 11px;
+      font-weight: bold;
+      transition: all 0.3s ease;
+      background: var(--bg-darker);
+      position: relative;
+      z-index: 2;
+      flex-shrink: 0;
+    }
+
+    .step-item.active .step-icon {
+      border-color: var(--accent-cyan);
+      box-shadow: 0 0 10px rgba(0, 195, 255, 0.4);
+      animation: spin 1.2s linear infinite;
+      border-top-color: transparent;
+      background: var(--bg-darker);
+    }
+
+    .step-item.completed .step-icon {
+      border-color: var(--success);
+      background-color: var(--bg-darker);
+      color: var(--success);
+    }
+
+    .step-item.completed .step-icon::before {
+      content: '✓';
+    }
+
+    .step-item.failed .step-icon {
+      border-color: var(--danger);
+      background-color: var(--bg-darker);
+      color: var(--danger);
+    }
+
+    .step-item.failed .step-icon::before {
+      content: '×';
+    }
+
+    /* Progress Bar */
+    .progress-container {
+      width: 100%;
+      max-width: 440px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-color);
+      height: 8px;
+      border-radius: 4px;
+      margin-bottom: 20px;
+      overflow: hidden;
+      position: relative;
+      box-shadow: var(--shadow-glow);
+    }
+
+    .progress-bar {
+      width: 0%;
+      height: 100%;
+      background: var(--accent-grad);
+      border-radius: 4px;
+      transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 0 8px rgba(0, 195, 255, 0.6);
+      position: relative;
+    }
+
+    .progress-bar::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(
+        90deg,
+        rgba(255, 255, 255, 0) 0%,
+        rgba(255, 255, 255, 0.25) 50%,
+        rgba(255, 255, 255, 0) 100%
+      );
+      animation: progress-shimmer 1.5s infinite linear;
+    }
+
+    @keyframes progress-shimmer {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(100%); }
+    }
+
+    .error-card {
+      background: rgba(239, 68, 68, 0.08);
+      border: 1px solid rgba(239, 68, 68, 0.25);
+      border-radius: 8px;
+      padding: 14px 18px;
+      width: 100%;
+      max-width: 440px;
+      max-height: 140px;
+      overflow-y: auto;
+      text-align: left;
+      margin-bottom: 20px;
+      display: none;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    }
+
+    .error-card h3 {
+      color: var(--danger);
+      font-size: 13px;
+      margin-bottom: 6px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .error-card p {
+      color: #fca5a5;
+      font-size: 12px;
+      font-family: var(--font-mono);
+      white-space: pre-wrap;
+      line-height: 1.4;
+    }
+
+    .controls-row {
+      display: flex;
+      gap: 16px;
+    }
+
+    /* Card background breathing glow */
+    .setup-card {
+      background: rgba(10, 18, 42, 0.4);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 24px;
+      width: 100%;
+      max-width: 500px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      box-shadow: var(--shadow-glow);
+      transition: border-color 0.5s ease, box-shadow 0.5s ease;
+    }
+
+    .setup-card.glowing {
+      border-color: rgba(0, 195, 255, 0.4);
+      box-shadow: 0 0 25px rgba(0, 195, 255, 0.15), var(--shadow-glow);
+    }
+
+    .setup-card.errored {
+      border-color: rgba(239, 68, 68, 0.4);
+      box-shadow: 0 0 25px rgba(239, 68, 68, 0.15), 0 0 15px rgba(239, 68, 68, 0.1);
+    }
+
+    #btn-back:hover {
+      background: rgba(0, 195, 255, 0.12) !important;
+      border-color: rgba(0, 195, 255, 0.5) !important;
+      box-shadow: 0 0 12px rgba(0, 195, 255, 0.3) !important;
+      color: #fff !important;
+    }
+  </style>
+</head>
+<body>
+  <div class="titlebar">
+    <div class="brand">
+      <svg class="brand-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4.5 16.5L12 3l7.5 13.5M7 12h10M12 3v13.5"></path>
+        <circle cx="12" cy="18" r="1.5" fill="currentColor"></circle>
+      </svg>
+      ADAM
+    </div>
+    <div class="window-controls">
+      <button class="control-btn" onclick="window.api.windowControl('minimize')">—</button>
+      <button class="control-btn close-btn" onclick="window.api.windowControl('close')">×</button>
+    </div>
+  </div>
+
+  <div class="app-container">
+    <div class="window-content">
+      <div id="glow-container" class="setup-card glowing">
+        
+        <!-- Neural Core Animation -->
+        <div class="neural-core-container">
+          <div class="core-orbit-outer"></div>
+          <div class="core-orbit-inner"></div>
+          <div class="core-pulse-glow"></div>
+          <div class="core-pulse" id="core-pulse-orb"></div>
+          <div class="core-particles">
+            <div class="particle p1"></div>
+            <div class="particle p2"></div>
+            <div class="particle p3"></div>
+            <div class="particle p4"></div>
+          </div>
+        </div>
+
+        <div class="status-title" id="status-title">Configuring Workspace...</div>
+        
+        <!-- Steps checklists -->
+        <div class="steps-list" id="steps-list">
+          <div class="timeline-track">
+            <div class="timeline-fill" id="timeline-fill"></div>
+          </div>
+          <div class="step-item" id="step-0">
+            <div class="step-icon"></div>
+            <span>Terminating lingering engine instances</span>
+          </div>
+          <div class="step-item" id="step-1">
+            <div class="step-icon"></div>
+            <span>Mapping parameters and offloading layers</span>
+          </div>
+          <div class="step-item" id="step-2">
+            <div class="step-icon"></div>
+            <span>Initializing Llama CPP core server</span>
+          </div>
+          <div class="step-item" id="step-3">
+            <div class="step-icon"></div>
+            <span>Loading model weights and context</span>
+          </div>
+          <div class="step-item" id="step-4">
+            <div class="step-icon"></div>
+            <span>Allocating Whisper STT memory</span>
+          </div>
+          <div class="step-item" id="step-5">
+            <div class="step-icon"></div>
+            <span>Offloading Qwen TTS vocal textures</span>
+          </div>
+          <div class="step-item" id="step-6">
+            <div class="step-icon"></div>
+            <span>Executing warmup and auditory chimes</span>
+          </div>
+          <div class="step-item" id="step-7">
+            <div class="step-icon"></div>
+            <span>Activating full-duplex speech loop</span>
+          </div>
+        </div>
+
+        <div class="progress-container">
+          <div class="progress-bar" id="progress-bar"></div>
+        </div>
+
+        <!-- Error view -->
+        <div class="error-card" id="error-card">
+          <h3 id="error-type">Setup Failed</h3>
+          <p id="error-cause">No details available.</p>
+        </div>
+
+        <div class="controls-row">
+          <button id="btn-back" class="glow-btn hidden" style="background: rgba(0, 195, 255, 0.05); border: 1px solid rgba(0, 195, 255, 0.2); color: var(--accent-cyan); box-shadow: none;">
+            BACK TO SELECTION
+          </button>
+          <button id="btn-start" class="glow-btn" disabled style="display: none;">
+            START CHAT SESSION
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="setup.js"></script>
+</body>
+</html>
