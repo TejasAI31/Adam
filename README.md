@@ -1,12 +1,24 @@
-# Adam
+# Adam: Local AI Desktop Assistant
 
-Adam is a high-performance desktop application integrating local Large Language Model (LLM) inference, real-time Speech-to-Text (STT) transcription, and Text-to-Speech (TTS) vocalization. Built with a premium, low-latency design, the application supports full-duplex voice interactions, background tool execution, and remote workspace orchestration.
+Adam is a fast, completely local desktop application that lets you run and chat with AI models on your own computer. It combines text chat, real-time voice recognition (Speech-to-Text), and natural voice synthesis (Text-to-Speech) into a single interface. 
+
+You can use it as a voice assistant, a standard chat interface, or even let the AI perform background tasks, take screenshots, browse local files, and control your mouse and keyboard. Because everything runs locally, your data never leaves your machine.
 
 ---
 
-## Architectural Topology
+## Table of Contents
 
-Adam uses a decoupled frontend-backend architecture to guarantee GUI responsiveness and isolated heavy-computation processing.
+* [How It's Structured](#how-its-structured)
+* [Core Features](#core-features)
+* [Technical Specifications](#technical-specifications)
+* [Installation & Setup Guide](#installation--setup-guide)
+* [Building a Standalone Installer](#building-a-standalone-installer)
+
+---
+
+## How It's Structured
+
+Adam separates the frontend interface from the backend server. This keeps the user interface incredibly smooth and responsive, even when the AI models are using full system resources to generate answers or process audio.
 
 ```
                +-------------------------------------------------------+
@@ -17,14 +29,14 @@ Adam uses a decoupled frontend-backend architecture to guarantee GUI responsiven
                |  - IPC Main/Renderer Bridge                           |
                +--------------------------+----------------------------+
                                           |
-                               HTTP / SSE Requests
+                                HTTP / SSE Requests
                                           |
                +--------------------------v----------------------------+
                |                   FASTAPI BACKEND                     |
                |  - Uvicorn Server (http://127.0.0.1:8000)             |
-               |  - Full-Duplex Dialogue & State Orchestrator          |
-               |  - System Resource & Process Monitor                  |
-               |  - Disk/Cache Garbage Collector                       |
+               |  - Handles conversation flow & app state              |
+               |  - Monitors system resources & running processes      |
+               |  - Cleans up temporary disk files & cache             |
                +----+---------------------+-----------------------+----+
                     |                     |                       |
                +----v----+           +----v----+             +----v----+
@@ -33,49 +45,70 @@ Adam uses a decoupled frontend-backend architecture to guarantee GUI responsiven
                +---------+           +---------+             +---------+
 ```
 
-### Core Subsystems
+### Subsystem Breakdown
 
-* **Frontend Client (`electron/`)**: Built on Electron. Handles window routing (`selection.html`, `setup.html`, `main.html`), hardware configurations storage, and SSH tunneling scripts.
-* **FastAPI Server (`backend/src/api_server.py`)**: Runs on Uvicorn. Orchestrates session states, exposes process diagnostics, and controls the audio playback queue.
-* **LLaMA Server Daemon**: Spawns the `llama-server.exe` binary in the background to serve local GGUF models with hardware graphics acceleration (CUDA/CPU).
-* **STT Transcription**: Employs the `WhisperX` engine to transcribe system-level microphone inputs into structured text.
-* **TTS Synthesizer**: Utilizes the `Qwen-TTS` pipeline to generate natural vocal responses streamed directly to the system speakers.
+* **Frontend Client (`electron/`)**
+  The desktop wrapper built with Electron. It handles navigating between screens (like model selection, initial setup, and the main chat workspace), saves your local hardware configurations, and runs scripts to securely tunnel your connection for remote access.
+
+* **FastAPI Server (`backend/src/api_server.py`)**
+  The backbone of the application. Running on a Uvicorn server, it manages the active chat sessions, updates the front-end with system diagnostics, and coordinates the audio queue so that generated speech plays back naturally.
+
+* **LLaMA Server Daemon**
+  Automatically launches a background `llama-server.exe` instance. It handles running GGUF language models and is set up to automatically use graphics acceleration (NVIDIA CUDA) if you have a compatible graphics card.
+
+* **Speech-to-Text (`WhisperX`)**
+  Listens to your microphone and instantly transcribes what you say into text.
+
+* **Text-to-Speech (`Qwen-TTS`)**
+  Takes the text written by the AI and reads it back to you in real-time with a custom, natural voice.
 
 ---
 
-## Core Capabilities and Optimizations
+## Core Features
 
-### 1. Hardware Allocation & Concurrent Model Downloader
-* **Hardware Detection**: Automatically audits physical CPU cores, system RAM, GPU adapters, and VRAM to recommend optimal graphics layer offloading configurations.
-* **Concurrent Downloads**: Supports multi-threaded downloading of Hugging Face repositories directly within the UI, with separate progress bars, speeds, and status logs for individual assets.
-* **Bypass Symlink Limits**: Writes assets directly to snapshot paths, resolving the standard Windows administrative privilege requirements for creating symlinks.
+### 1. Hardware Detection & Smart Downloader
+
+> **No more guesswork.** The app automatically detects what your PC can handle and helps you download the models in a few clicks.
+
+* **Hardware Optimization**: On startup, the app scans your CPU, system RAM, GPU model, and VRAM. It then calculates and recommends the best model settings so you get fast generation speeds without running out of memory.
+* **Concurrent Downloads**: You can search and download models directly from Hugging Face inside the app. It supports downloading multiple files at the same time, complete with individual progress bars, speed trackers, and status logs.
+* **No Admin Rights Needed**: It bypasses Windows symbolic link limits by writing files directly to snapshot paths, meaning you do not need to launch the app as an administrator to download or configure models.
 
 ![Model Configuration Workspace](images/model_configuration.png)
 
 ---
 
-### 2. Dialogue & Orchestration Pipeline
-* **Real-time Streaming**: Streams text responses token-by-token directly to the frontend chat UI in all execution rounds (including final answers generated after executing tools like `web_search`), removing visual latency.
-* **Search Execution Cap**: Integrates Brave as the primary search engine with DDGS fallbacks. Limits the model to a maximum of 2 web searches per turn to prevent recursive tool-calling loops, forcing the LLM to synthesize final answers from the retrieved context.
-* **Log Silence**: Suppresses intermediate reasoning outputs (such as `<think>` blocks) and redundant log prints to maintain clean logs and terminal output.
+### 2. Live Chat Optimizations
+
+> **Fluid conversation.** Text streams in real-time, and web searches are limited to keep responses lightning-fast.
+
+* **Token Streaming**: Text appears word-by-word as it is being generated. This includes the final answers written after using tools, ensuring you never have to wait for a massive block of text to load all at once.
+* **Smart Web Searches**: The AI can browse the web using Brave Search (with DuckDuckGo Search as a fallback) to answer questions about recent events. To prevent the model from getting stuck in an endless loop of searching, it is limited to a maximum of 2 searches per turn.
+* **Clean UI**: Messy internal thoughts (like `<think>` tags used by reasoning models) and system terminal logs are hidden from the main window so you can focus on the chat.
 
 ![Main Conversational Workspace](images/chat_screen.png)
 
 ---
 
 ### 3. Background Tool Action Logging
-* **Expanded Toolbelt**: Exposes mathematical evaluation engines, system controllers, browser URL launchers, and accessibility hooks to the model.
-* **Diagnostic Timeline**: Maintains a detailed execution timeline, input parameters, and output results for all background processes in a dedicated tool-logging panel.
+
+> **Total transparency.** Keep track of everything the AI does behind the scenes.
+
+* **Interactive Toolbelt**: The AI has access to several local tools. It can run complex math equations, open URLs in your default browser, or execute system commands.
+* **Timeline Logging**: A dedicated sidebar displays an interactive history of every tool action. You can click on any action to see the exact input arguments the AI used and the output the tool returned.
 
 ![Tool Action Logging](images/tool_screen.png)
 
 ---
 
-### 4. Interactive Remote Workspace
-* **Robust Screen Grabbing**: Captures the host's primary desktop session using a DPI-aware Pillow screen grabber. Requests originating from loopback connections (`127.0.0.1`, `localhost`, or `::1`) automatically bypass remote access security overrides, enabling local desktop use.
-* **Smooth Mouse Actions**: Simulates mouse dragging actions using absolute coordinates with incremental movements, pauses, and releases to ensure draggable items reach targets.
-* **Focused Key Entry**: Click events are fired on target coordinates prior to sending text inputs, ensuring input controls are focused.
-* **Dual-Mode File Explorer**: Tree nodes toggle their children list with single clicks, while double-clicking a folder opens the directory flatly at the root level of the file explorer panel.
+### 4. Remote Desktop & Sharing
+
+> **Control your PC from anywhere.** Safe, reliable, and responsive remote desktop capabilities.
+
+* **DPI-Aware Screenshots**: Captures high-resolution images of your desktop using Pillow. Local connections (localhost) bypass remote access locks automatically for a seamless experience.
+* **Natural Mouse Dragging**: Simulates mouse movements using absolute screen coordinates, human-like pauses, and step-by-step dragging so elements land exactly where they should.
+* **Focused Key Input**: The AI automatically clicks active text fields before typing to ensure your keystrokes go to the right place.
+* **Built-In File Explorer**: A simple file explorer panel allows you to browse folders. Single-click any directory to expand its folders, or double-click to jump directly into it.
 
 ![Sharing Configuration](images/settings_screen.png)
 
@@ -85,41 +118,44 @@ Adam uses a decoupled frontend-backend architecture to guarantee GUI responsiven
 
 ---
 
-### 5. Core System Acceleration
-* **Instant Startup**: Spawns Python backend processes immediately using environment `PATH` traversal instead of blocking shell lookup calls, reducing boot times by 4-6 seconds.
-* **Non-blocking Disk Caching**: Caches Hugging Face repository queries in memory for 10 seconds to prevent file-locking conflicts on folders synchronized with OneDrive.
+### 5. Performance Tweaks
+
+* **Instant App Boot**: Python backend processes are spawned immediately through direct path lookups instead of slow shell searches, saving 4-6 seconds during startup.
+* **Optimized Storage**: Unnecessary temporary files and audio caches are cleaned up automatically in the background to save hard drive space.
 
 ---
 
-## System Specifications
+## Technical Specifications
 
-### Default Pipeline Models
+### Default Model Pipeline
 
-| Pipeline Stage | Model Name | Default Repository | Size | Device Support |
+| Stage | Model Name | Hugging Face Repository | File Size | Hardware Support |
 |---|---|---|---|---|
-| Main LLM | `Qwen3.5-4B-Q4_K_M.gguf` | `Qwen/Qwen3.5-4B-Instruct-GGUF` | 2.55 GB | CPU / CUDA GPU |
+| Main Brain (LLM) | `Qwen3.5-4B-Q4_K_M.gguf` | `Qwen/Qwen3.5-4B-Instruct-GGUF` | 2.55 GB | CPU / CUDA GPU |
 | Vision LLM | `Qwen3VL-2B-Instruct-Q4_K_M.gguf` | `Qwen/Qwen3-VL-2B-Instruct-GGUF` | 1.03 GB | CPU / CUDA GPU |
-| Drafter LLM | `Qwen3.5-0.8B-Q4_K_M.gguf` | `Qwen/Qwen3.5-0.8B-Instruct-GGUF` | 0.50 GB | CPU / CUDA GPU |
-| Multi-Modal | `mmproj-Qwen3.5-4B-BF16.gguf` | `Qwen/Qwen3.5-4B-Instruct-GGUF` | 0.63 GB | CPU / CUDA GPU |
+| Speed Drafter | `Qwen3.5-0.8B-Q4_K_M.gguf` | `Qwen/Qwen3.5-0.8B-Instruct-GGUF` | 0.50 GB | CPU / CUDA GPU |
+| Multi-Modal Helper | `mmproj-Qwen3.5-4B-BF16.gguf` | `Qwen/Qwen3.5-4B-Instruct-GGUF` | 0.63 GB | CPU / CUDA GPU |
 | Speech-to-Text | `whisperx:medium` | `Systran/faster-whisper-medium` | 1.50 GB | CPU / CUDA GPU |
 | Text-to-Speech | `tts:qwen` | `Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice` | 1.20 GB | CPU / CUDA GPU |
 
-### Resource Requirements
+### Hardware Requirements
 
-| Hardware Component | Minimum Specification | Recommended Specification |
+| Component | Minimum Specs | Recommended Specs |
 |---|---|---|
-| Processor | 4-Core CPU | 8-Core Intel Core i7 / AMD Ryzen 7 |
-| Memory (RAM) | 16 GB | 32 GB |
-| Graphics Card | 6 GB VRAM (CUDA-compatible) | 12 GB+ VRAM (NVIDIA RTX Series) |
+| Processor (CPU) | 4 Cores | 8 Cores (Intel Core i7 / AMD Ryzen 7) |
+| System Memory (RAM) | 16 GB | 32 GB |
+| Graphics Card (GPU) | 6 GB VRAM (NVIDIA CUDA-compatible) | 12 GB+ VRAM (NVIDIA RTX Series) |
 
 ---
 
-## Installation & Developer Guide
+## Installation & Setup Guide
 
-### Development Setup (Source Code Execution)
+To run this project from the source code, you need to set up both the backend and frontend environments.
 
-#### 1. Setup Backend Environment
-Initialize the Python virtual environment and install dependencies:
+### 1. Setup the Python Backend
+
+Open a terminal, navigate to the `backend` folder, create a virtual environment, and install the Python dependencies:
+
 ```cmd
 cd backend
 python -m venv env
@@ -127,15 +163,19 @@ call env\Scripts\activate
 pip install -r requirements.txt
 ```
 
-#### 2. Setup Frontend Environment
-Install Node package dependencies:
+### 2. Setup the Frontend
+
+Open a separate terminal window, navigate to the `electron` folder, and install the Node packages:
+
 ```cmd
 cd electron
 npm install
 ```
 
-#### 3. Run the App
-Start the Electron GUI:
+### 3. Run the Application
+
+To start the app, run the development server from the `electron` directory:
+
 ```cmd
 cd electron
 npm run dev
@@ -143,10 +183,13 @@ npm run dev
 
 ---
 
-### Packaging Rebuild
-To compile the standalone distribution executables:
+## Building a Standalone Installer
+
+If you want to package the entire project into a portable Windows executable installer:
+
 ```cmd
 cd build
 build.bat
 ```
-This script compiles the Python backend using PyInstaller, packages the `ffmpeg-shared` binaries, copies required settings profiles, and compiles the final NSIS Web installer.
+
+This script runs PyInstaller to compile the Python backend, bundles the `ffmpeg-shared` audio libraries, copies the settings configurations, and outputs a single, easy-to-run setup file.
