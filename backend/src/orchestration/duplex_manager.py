@@ -576,14 +576,23 @@ class FullDuplexManager:
                         self.history
                     )
 
-                # Find the latest user message in the current turn's history and temporarily replace it
-                # with the full user_content (containing base64 images/PDF texts) for the LLM call.
+                # Identify the original user message that initiated this turn (prior to any tool rounds)
+                # and temporarily replace its content with rich user_content (images/PDFs) for the LLM call.
+                turn_user_idx = None
                 for idx in reversed(range(len(messages))):
                     if messages[idx]["role"] == "user":
-                        last_msg = copy.copy(messages[idx])
-                        last_msg["content"] = user_content
-                        messages[idx] = last_msg
-                        break
+                        turn_user_idx = idx
+                        # If in round 1, this is the user prompt. In round > 1, find the user prompt before tool calls.
+                        if current_round == 1:
+                            break
+                        # Check if this user message came before assistant/tool messages in this turn
+                        if idx < len(messages) - 1 and messages[idx + 1].get("role") in ("assistant", "tool"):
+                            break
+
+                if turn_user_idx is not None:
+                    last_msg = copy.copy(messages[turn_user_idx])
+                    last_msg["content"] = user_content
+                    messages[turn_user_idx] = last_msg
 
                 cleaned_messages = self._clean_messages_for_template(messages)
 
@@ -800,7 +809,7 @@ class FullDuplexManager:
                         )
                         self.history.extend(tool_results)
 
-                        # Inject visual context or dummy user message to satisfy template parsers
+                        # Inject visual context if images were captured from action execution
                         if visual_payloads:
                             content_block = [
                                 {
@@ -812,13 +821,6 @@ class FullDuplexManager:
                                 {
                                     "role": "user",
                                     "content": content_block,
-                                }
-                            )
-                        else:
-                            self.history.append(
-                                {
-                                    "role": "user",
-                                    "content": "Tool outputs provided above. Please process and continue.",
                                 }
                             )
 

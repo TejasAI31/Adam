@@ -782,11 +782,15 @@ def run_setup_worker(payload: SetupPayload):
 
             # 8. Load TTS
             if payload.tts_enabled:
-                setup_progress.update({"status": "Loading Qwen Text-to-Speech engine (GPU)...", "progress": 80})
+                setup_progress.update({"status": "Loading Qwen Text-to-Speech engine...", "progress": 80})
                 broadcast_event("setup_progress", setup_progress)
-                from src.tts.qwen_tts import load_tts_engine
-                tts_engine = load_tts_engine()
-                broadcast_log("SYSTEM", "TTS engine loaded successfully.")
+                try:
+                    from src.tts.qwen_tts import load_tts_engine
+                    tts_engine = load_tts_engine()
+                    broadcast_log("SYSTEM", "TTS engine loaded successfully.")
+                except Exception as tts_err:
+                    broadcast_log("ERROR", f"TTS engine failed to initialize: {tts_err}. Continuing with TTS disabled.")
+                    tts_engine = None
             else:
                 tts_engine = None
                 broadcast_log("SYSTEM", "TTS engine loading skipped.")
@@ -795,8 +799,11 @@ def run_setup_worker(payload: SetupPayload):
             if payload.tts_enabled or llm_client:
                 setup_progress.update({"status": "Warming up model endpoints and generating chimes...", "progress": 90})
                 broadcast_event("setup_progress", setup_progress)
-                warmup_and_generate_chime(tts_engine, llm_client)
-                broadcast_log("SYSTEM", "Warmup complete.")
+                try:
+                    warmup_and_generate_chime(tts_engine, llm_client)
+                    broadcast_log("SYSTEM", "Warmup complete.")
+                except Exception as warmup_err:
+                    broadcast_log("WARNING", f"Warmup warning: {warmup_err}")
             
             # 10. Instantiate Duplex Manager
             from src.orchestration.duplex_manager import FullDuplexManager
@@ -908,7 +915,8 @@ def voice_loop_worker():
                 if len(ring_buffer) > audio_cfg.padding_frames:
                     ring_buffer.pop(0)
                 num_voiced = sum(1 for _, speech in ring_buffer if speech)
-                if num_voiced > 0.8 * len(ring_buffer):
+                # 50% voiced ratio threshold for quick, natural speech start detection
+                if num_voiced > 0.5 * len(ring_buffer):
                     triggered = True
                     voiced_frames.extend([f for f, _ in ring_buffer])
                     ring_buffer.clear()
@@ -921,8 +929,9 @@ def voice_loop_worker():
                 num_unvoiced = sum(1 for _, speech in ring_buffer if not speech)
                 current_duration = (len(voiced_frames) * audio_cfg.frame_duration_ms) / 1000.0
                 
-                if num_unvoiced > 0.8 * len(ring_buffer) or current_duration >= audio_cfg.max_speech_duration:
-                    if current_duration >= audio_cfg.min_speech_duration:
+                # End of speech condition
+                if num_unvoiced > 0.75 * len(ring_buffer) or current_duration >= audio_cfg.max_speech_duration:
+                    if current_duration >= 0.3:
                         raw_chunk = b"".join(voiced_frames)
                         clean_audio_array = preprocess_audio(raw_chunk)
                         
@@ -939,13 +948,13 @@ def voice_loop_worker():
                         finally:
                             pass
                             
-                        if transcription:
+                        if transcription and len(transcription.strip()) > 0:
                             broadcast_log("STT", f"Transcribed text: \"{transcription}\"")
                             broadcast_event("voice_status", {"status": "idle", "transcription": transcription})
                             
-                            # Trigger response if 'adam' is named
+                            # Trigger response only if 'adam' is mentioned in the transcription
                             if "adam" in transcription.lower():
-                                if duplex_manager.is_speaking:
+                                if duplex_manager and duplex_manager.is_speaking:
                                     duplex_manager.interrupt()
                                     broadcast_log("SYSTEM", "User interrupted playback!")
                                     
@@ -2687,6 +2696,17 @@ def serve_static(file_path: str):
         
     raise HTTPException(status_code=404, detail="File not found")
 
+@app.post("/api/shutdown")
+def post_shutdown(background_tasks: BackgroundTasks):
+    broadcast_log("SYSTEM", "API server received shutdown request. Cleaning up all facilities...")
+    stop_all_components()
+    def delayed_exit():
+        time.sleep(0.5)
+        import os, signal
+        os.kill(os.getpid(), signal.SIGTERM)
+    background_tasks.add_task(delayed_exit)
+    return {"status": "shutting_down"}
+
 # Startup initialization
 @app.on_event("startup")
 def startup_event():
@@ -2698,6 +2718,20 @@ def startup_event():
 @app.on_event("shutdown")
 def shutdown_event():
     stop_all_components()
+
+import atexit
+atexit.register(stop_all_components)
+
+import signal
+def _signal_handler(sig, frame):
+    stop_all_components()
+    sys.exit(0)
+
+try:
+    signal.signal(signal.SIGINT, _signal_handler)
+    signal.signal(signal.SIGTERM, _signal_handler)
+except Exception:
+    pass
 
 if __name__ == "__main__":
     import uvicorn

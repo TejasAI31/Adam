@@ -1503,13 +1503,18 @@
 
         <!-- CONFIG TAB -->
         <div class="tab-panel" id="panel-config">
-          <div class="config-layout">
-            <div class="config-header">
-              <h2 style="font-size: 16px; font-weight: 600; margin-bottom: 4px;">Engine Configuration</h2>
-              <p style="color: var(--text-muted); font-size: 13px;">Manage hyperparameters, audio limits, and active Llama options.</p>
+          <div class="config-layout" style="width: 100%; height: 100%; display: flex; flex-direction: column; padding: 24px; overflow-y: auto; gap: 16px;">
+            <div class="config-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; flex-wrap: wrap; gap: 12px;">
+              <div>
+                <h2 style="font-size: 16px; font-weight: 600; margin-bottom: 4px;">Engine Configuration</h2>
+                <p style="color: var(--text-muted); font-size: 13px;">Manage hyperparameters, audio limits, and active Llama options.</p>
+              </div>
+              <button id="btn-save-config" class="glow-btn" style="padding: 10px 20px; font-size: 13px; font-weight: 700; white-space: nowrap; flex-shrink: 0; cursor: pointer;">
+                SAVE CONFIGURATION
+              </button>
             </div>
 
-            <div class="config-grid">
+            <div class="config-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
               <!-- Llama block -->
               <div class="config-section">
                 <h3>Llama Server Parameters</h3>
@@ -1624,14 +1629,6 @@
                   <input type="number" id="cfg-model-max-output">
                 </div>
               </div>
-            </div>
-
-            <!-- Save Action Row -->
-            <div style="display: flex; justify-content: flex-end; margin-top: 10px;">
-              <button id="btn-save-config" class="glow-btn">
-                SAVE CONFIGURATION
-              </button>
-            </div>
             </div>
           </div>
         </div>

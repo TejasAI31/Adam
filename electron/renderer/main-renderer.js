@@ -2053,7 +2053,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  btnSaveConfig.addEventListener('click', async () => {
+  async function handleSaveConfig() {
     // Pack values
     const newConfig = {
       llama: {
@@ -2109,7 +2109,11 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (e) {
       alert("Failed to save config: " + e.message);
     }
-  });
+  }
+
+  if (btnSaveConfig) {
+    btnSaveConfig.addEventListener('click', handleSaveConfig);
+  }
 
   btnModalCancel.addEventListener('click', () => {
     reloadModal.style.display = 'none';

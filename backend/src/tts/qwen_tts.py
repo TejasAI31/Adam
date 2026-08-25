@@ -565,12 +565,37 @@ from src.llm.prompts import BUTLER_INSTRUCTION
 
 
 def load_tts_engine():
-    print("Loading TTS model on GPU (bfloat16)...")
-    return FasterQwen3TTS.from_pretrained(
-        model_cfg.tts_repo_id,
-        dtype=torch.bfloat16,
-        device=model_cfg.tts_device,
-    )
+    device = getattr(model_cfg, "tts_device", "cuda")
+    if device in ["gpu", "cuda"] and torch.cuda.is_available():
+        try:
+            print(f"[TTS Load] Loading FasterQwen3TTS on GPU (cuda:0, bfloat16): {model_cfg.tts_repo_id}...")
+            return FasterQwen3TTS.from_pretrained(
+                model_cfg.tts_repo_id,
+                dtype=torch.bfloat16,
+                device="cuda",
+            )
+        except Exception as e:
+            print(f"[TTS Load Warning] FasterQwen3TTS failed: {e}. Falling back to Qwen3TTSModel on CUDA...")
+            try:
+                return Qwen3TTSModel.from_pretrained(
+                    model_cfg.tts_repo_id,
+                    torch_dtype=torch.bfloat16,
+                    device_map="cuda",
+                )
+            except Exception as e2:
+                print(f"[TTS Load Warning] Qwen3TTSModel on CUDA failed: {e2}. Falling back to CPU...")
+                return Qwen3TTSModel.from_pretrained(
+                    model_cfg.tts_repo_id,
+                    torch_dtype=torch.float32,
+                    device_map="cpu",
+                )
+    else:
+        print(f"[TTS Load] Loading Qwen3TTSModel on CPU (float32): {model_cfg.tts_repo_id}...")
+        return Qwen3TTSModel.from_pretrained(
+            model_cfg.tts_repo_id,
+            torch_dtype=torch.float32,
+            device_map="cpu",
+        )
 
 
 def warmup_and_generate_chime(tts_model, llm):
@@ -579,38 +604,50 @@ def warmup_and_generate_chime(tts_model, llm):
     # Warmup TTS
     if tts_model is not None:
         try:
+            speaker = getattr(model_cfg, "tts_speaker", "Aiden")
             _ = tts_model.generate_custom_voice(
-                text="Warmup phrase to initialize CUDA graph.",
+                text="Warmup phrase to initialize voice pipeline.",
                 language="English",
-                speaker="Ryan",
+                speaker=speaker,
                 instruct=BUTLER_INSTRUCTION,
             )
+            print("[Warmup] TTS warmup successful.")
         except Exception as e:
-            print(f"[Warmup] TTS warmup failed: {e}")
+            print(f"[Warmup] TTS warmup non-fatal warning: {e}")
 
     # Warmup LLM
-    _ = llm.create_chat_completion(
-        messages=[
-            {"role": "system", "content": "You are Adam."},
-            {"role": "user", "content": "System initialization check. Confirm model readiness and audio response pipeline operational status."},
-        ],
-        max_tokens=10,
-        stream=False
-    )
+    if llm is not None:
+        try:
+            _ = llm.create_chat_completion(
+                messages=[
+                    {"role": "system", "content": "You are Adam."},
+                    {"role": "user", "content": "System initialization check. Confirm model readiness and audio response pipeline operational status."},
+                ],
+                max_tokens=10,
+                stream=False
+            )
+            print("[Warmup] LLM warmup successful.")
+        except Exception as e:
+            print(f"[Warmup] LLM warmup non-fatal warning: {e}")
 
     # Pre-generate Acknowledgment Chime
-    fs = 16000
-    duration1, duration2 = 0.04, 0.08
-    f1, f2 = 523.25, 659.25
+    try:
+        fs = 16000
+        duration1, duration2 = 0.04, 0.08
+        f1, f2 = 523.25, 659.25
 
-    t1 = np.linspace(0, duration1, int(fs * duration1), False)
-    tone1 = np.sin(f1 * t1 * 2 * np.pi) * 0.1
+        t1 = np.linspace(0, duration1, int(fs * duration1), False)
+        tone1 = np.sin(f1 * t1 * 2 * np.pi) * 0.1
 
-    t2 = np.linspace(0, duration2, int(fs * duration2), False)
-    tone2 = np.sin(f2 * t2 * 2 * np.pi) * 0.1
+        t2 = np.linspace(0, duration2, int(fs * duration2), False)
+        tone2 = np.sin(f2 * t2 * 2 * np.pi) * 0.1
 
-    audio = np.concatenate([tone1, tone2])
-    fade = np.exp(-np.linspace(0, 3, len(audio)))
-    audio = audio * fade
-    sf.write(CHIME_PATH, audio, fs)
-    print("Chime generated and models warmed up successfully!")
+        audio = np.concatenate([tone1, tone2])
+        fade = np.exp(-np.linspace(0, 3, len(audio)))
+        audio = audio * fade
+        sf.write(CHIME_PATH, audio, fs)
+        print("Chime generated successfully!")
+    except Exception as e:
+        print(f"[Warmup] Chime generation warning: {e}")
+
+    print("Warmup process completed.")

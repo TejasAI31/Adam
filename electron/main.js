@@ -289,13 +289,82 @@ function startPythonBackend() {
   });
 }
 
+function sendBackendShutdownSync() {
+  try {
+    const req = http.request({
+      hostname: '127.0.0.1',
+      port: 8000,
+      path: '/api/shutdown',
+      method: 'POST',
+      timeout: 500
+    });
+    req.on('error', () => {});
+    req.on('timeout', () => req.destroy());
+    req.end();
+  } catch (e) {}
+}
+
 function stopPythonBackend() {
   isAppQuitting = true;
+  if (pythonRestartTimer) {
+    clearTimeout(pythonRestartTimer);
+    pythonRestartTimer = null;
+  }
+  if (pythonSuccessTimeout) {
+    clearTimeout(pythonSuccessTimeout);
+    pythonSuccessTimeout = null;
+  }
+
+  // 1. Notify Python API server to cleanly release audio streams and child resources
+  sendBackendShutdownSync();
+
+  // 2. Terminate Python backend process tree
   if (pythonProcess) {
-    console.log('[Electron Main] Terminating Python process...');
-    pythonProcess.kill();
+    console.log('[Electron Main] Terminating Python process tree...');
+    const pid = pythonProcess.pid;
+    if (pid) {
+      if (process.platform === 'win32') {
+        try {
+          child_process.execSync(`taskkill /F /T /PID ${pid}`, { stdio: 'ignore' });
+        } catch (e) {}
+      } else {
+        try {
+          pythonProcess.kill('SIGKILL');
+        } catch (e) {}
+      }
+    }
     pythonProcess = null;
   }
+
+  // 3. Forcefully kill any lingering binaries launched by Adam (llama-server.exe, cloudflared.exe)
+  if (process.platform === 'win32') {
+    try {
+      child_process.execSync('taskkill /F /IM llama-server.exe', { stdio: 'ignore' });
+    } catch (e) {}
+    try {
+      child_process.execSync('taskkill /F /IM cloudflared.exe', { stdio: 'ignore' });
+    } catch (e) {}
+  } else {
+    try {
+      child_process.execSync('pkill -9 -f llama-server', { stdio: 'ignore' });
+    } catch (e) {}
+    try {
+      child_process.execSync('pkill -9 -f cloudflared', { stdio: 'ignore' });
+    } catch (e) {}
+  }
+
+  // 4. Clean ports 8000 and configured llama server port (default 8080)
+  killProcessOnPort(8000);
+  let llamaPort = 8080;
+  try {
+    if (fs.existsSync(settingsPath)) {
+      const s = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      if (s.llama && s.llama.SERVER_PORT) {
+        llamaPort = parseInt(s.llama.SERVER_PORT, 10);
+      }
+    }
+  } catch (e) {}
+  killProcessOnPort(llamaPort);
 }
 
 // Window creation helper (Single window reuse)
@@ -323,6 +392,11 @@ function getOrCreateWindow(width, height, resizable = true) {
       contextIsolation: true,
       nodeIntegration: false
     }
+  });
+
+  mainWindow.on('close', () => {
+    stopTunnel();
+    stopPythonBackend();
   });
 
   mainWindow.on('closed', () => {
@@ -1443,6 +1517,11 @@ app.whenReady().then(() => {
       navigateToSelection();
     }
   });
+});
+
+app.on('before-quit', () => {
+  stopTunnel();
+  stopPythonBackend();
 });
 
 app.on('window-all-closed', () => {
