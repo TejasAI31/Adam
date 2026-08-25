@@ -28,6 +28,7 @@ class FullDuplexManager:
     def __init__(self, llm_model, tts_model):
         self.llm = llm_model
         self.tts = tts_model
+        self.on_playback_status = None
 
         self.text_queue = queue.Queue()
         self.audio_queue = queue.Queue()
@@ -182,6 +183,11 @@ class FullDuplexManager:
         self.interrupt_event.set()
         self.is_speaking = False
         self.current_request_id += 1
+        if self.on_playback_status:
+            try:
+                self.on_playback_status(False)
+            except Exception:
+                pass
 
         while not self.text_queue.empty():
             try:
@@ -275,6 +281,12 @@ class FullDuplexManager:
                 continue
 
             try:
+                if self.on_playback_status:
+                    try:
+                        self.on_playback_status(True)
+                    except Exception:
+                        pass
+
                 if stream is not None and stream_rate != sr:
                     try:
                         stream.stop_stream()
@@ -310,6 +322,11 @@ class FullDuplexManager:
                 print(f"\n[Playback Error]: {e}")
             finally:
                 self.audio_queue.task_done()
+                if self.audio_queue.empty() and self.on_playback_status:
+                    try:
+                        self.on_playback_status(False)
+                    except Exception:
+                        pass
 
         if stream is not None:
             try:
@@ -381,6 +398,35 @@ class FullDuplexManager:
         self.is_speaking = True
         self.current_request_id += 1
         req_id = self.current_request_id
+
+        # Detect disabled tools to dynamically instruct the LLM
+        disabled_tools = []
+        all_standard_tools = [
+            "evaluate_expression", "solve_quadratic", "calculate_statistics",
+            "web_search", "ytm_search_and_get", "ytm_get_browse_context",
+            "open_browser_urls", "take_screenshot", "scan_screen_elements",
+            "click_element_by_name"
+        ]
+        if available_functions is not None:
+            for t in all_standard_tools:
+                if t not in available_functions:
+                    disabled_tools.append(t)
+        else:
+            disabled_tools = all_standard_tools
+
+        self.disabled_tools_instruction = ""
+        if disabled_tools:
+            self.disabled_tools_instruction = (
+                "\n\nDISABLED TOOLS NOTICE:\n"
+                "The following tools are explicitly DISABLED by the user: " + ", ".join(disabled_tools) + ".\n"
+                "If the user asks you to perform a task that requires one of these disabled tools, "
+                "you MUST NOT attempt to use other tools as workarounds (for example, if 'web_search' is disabled, "
+                "you are forbidden from using 'open_browser_urls' or 'ytm_search_and_get' to search or browse). "
+                "Instead, you must immediately halt, state clearly to the user that the tool is disabled, "
+                "explain what you cannot do, and ask the user for confirmation/permission before performing "
+                "any alternative actions (e.g. asking: 'I do not have access to web search. Would you like me to open the browser for you?')."
+            )
+
 
         clean_prompt = re.sub(r"[^\w\s]", "", prompt.lower()).strip()
 
@@ -520,9 +566,10 @@ class FullDuplexManager:
                 tool_calls_accumulator = {}
                 is_tool_round = False
                 round_text_buffer = ""
+                round_text_sent = False
 
                 with self.history_lock:
-                    messages = [{"role": "system", "content": SYSTEM_PROMPT}] + list(
+                    messages = [{"role": "system", "content": SYSTEM_PROMPT + self.disabled_tools_instruction}] + list(
                         self.history
                     )
 
@@ -589,8 +636,36 @@ class FullDuplexManager:
                         print(content, end="", flush=True)
                         full_response += content
                         if not is_tool_round:
-                            if callback:
-                                callback("text", content)
+                            if current_round > 1:
+                                if not round_text_sent:
+                                    round_text_buffer += content
+                                    if len(round_text_buffer) >= 40 or any(c in round_text_buffer for c in [".", "!", "?", "\n"]):
+                                        cleaned_buf = re.sub(
+                                            r"^\s*(right away|certainly|at once|sure|okay|of course|let me check|let me verify|let me search)\b[\.\!\?\s]*",
+                                            "",
+                                            round_text_buffer,
+                                            flags=re.IGNORECASE
+                                        )
+                                        round_text_sent = True
+                                        if cleaned_buf and callback:
+                                            callback("text", cleaned_buf)
+                                else:
+                                    if callback:
+                                        callback("text", content)
+                            else:
+                                if callback:
+                                    callback("text", content)
+
+                # Flush remaining buffer if not sent
+                if current_round > 1 and not round_text_sent and round_text_buffer and not is_tool_round:
+                    cleaned_buf = re.sub(
+                        r"^\s*(right away|certainly|at once|sure|okay|of course|let me check|let me verify|let me search)\b[\.\!\?\s]*",
+                        "",
+                        round_text_buffer,
+                        flags=re.IGNORECASE
+                    )
+                    if cleaned_buf and callback:
+                        callback("text", cleaned_buf)
 
                 # --- TOOL EXECUTION & DISPATCHING ---
                 if tool_calls_accumulator and not self.interrupt_event.is_set():
@@ -612,6 +687,32 @@ class FullDuplexManager:
                         print(f" -> Invoking Tool: {func_name}({func_args})")
                         if callback:
                             callback("tool_start", {"name": func_name, "arguments": func_args})
+
+                        # Check if tool is disabled/deselected in tools tab
+                        known_tools = {
+                            "evaluate_expression",
+                            "solve_quadratic",
+                            "calculate_statistics",
+                            "web_search",
+                            "ytm_search_and_get",
+                            "ytm_get_browse_context",
+                            "open_browser_urls",
+                            "take_screenshot",
+                            "scan_screen_elements",
+                            "click_element_by_name"
+                        }
+                        if func_name in known_tools and (available_functions is None or func_name not in available_functions):
+                            access_denied_msg = "I do not have access to the needed tools."
+                            if callback:
+                                callback("tool_end", {"name": func_name, "output": access_denied_msg})
+                                callback("text", access_denied_msg)
+                            if speech_enabled:
+                                self.text_queue.put((access_denied_msg, 0, req_id))
+                            with self.history_lock:
+                                self.history.append(
+                                    {"role": "assistant", "content": access_denied_msg}
+                                )
+                            return
 
                         # Direct execution through provided environment functions
                         if available_functions and func_name in available_functions:
@@ -677,6 +778,13 @@ class FullDuplexManager:
                         clean_int_response = re.sub(r"<think>.*?</think>", "", clean_int_response, flags=re.DOTALL).strip()
                         if not clean_int_response:
                             clean_int_response = full_response.strip()
+                        if current_round > 1:
+                            clean_int_response = re.sub(
+                                r"^\s*(right away|certainly|at once|sure|okay|of course|let me check|let me verify|let me search)\b[\.\!\?\s]*",
+                                "",
+                                clean_int_response,
+                                flags=re.IGNORECASE
+                            ).strip()
 
                     # Update history with tool calls and outputs
                     with self.history_lock:
@@ -723,6 +831,13 @@ class FullDuplexManager:
                     clean_final_response = re.sub(r"<think>.*?</think>", "", clean_final_response, flags=re.DOTALL).strip()
                     if not clean_final_response:
                         clean_final_response = full_response.strip()
+                    if current_round > 1:
+                        clean_final_response = re.sub(
+                            r"^\s*(right away|certainly|at once|sure|okay|of course|let me check|let me verify|let me search)\b[\.\!\?\s]*",
+                            "",
+                            clean_final_response,
+                            flags=re.IGNORECASE
+                        ).strip()
 
                 if (
                     clean_final_response
@@ -782,5 +897,9 @@ class FullDuplexManager:
             clean_msg = {"role": role, "content": content}
             if tool_calls:
                 clean_msg["tool_calls"] = tool_calls
+            if "tool_call_id" in msg:
+                clean_msg["tool_call_id"] = msg["tool_call_id"]
+            if "name" in msg:
+                clean_msg["name"] = msg["name"]
             cleaned.append(clean_msg)
         return cleaned

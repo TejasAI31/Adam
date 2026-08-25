@@ -345,7 +345,7 @@ function navigateToSetup() {
 }
 
 function navigateToMain() {
-  const win = getOrCreateWindow(1200, 800, true);
+  const win = getOrCreateWindow(1400, 850, true);
   win.setMinimumSize(1000, 700);
   win.loadFile(path.join(__dirname, 'renderer', 'main.html'));
 }
@@ -392,6 +392,25 @@ if (!fs.existsSync(settingsPath) && fs.existsSync(oldSettingsPath)) {
     fs.mkdirSync(settingsDir, { recursive: true });
     fs.copyFileSync(oldSettingsPath, settingsPath);
     console.log('[Electron Main] Migrated settings from adam-desktop to Adam successfully.');
+    
+    // Ensure sharing options are disabled and pushbullet token is blank on first startup migration
+    if (fs.existsSync(settingsPath)) {
+      const data = fs.readFileSync(settingsPath, 'utf8');
+      const settings = JSON.parse(data);
+      if (settings.sharing) {
+        settings.sharing.enabled = false;
+        settings.sharing.autostart = false;
+        settings.sharing.email_enabled = false;
+        settings.sharing.email_on_startup = false;
+        settings.sharing.remote_control_enabled = false;
+        if (settings.sharing.pushbullet) {
+          settings.sharing.pushbullet.enabled = false;
+          settings.sharing.pushbullet.token_encrypted = "";
+        }
+      }
+      fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 4), 'utf8');
+      console.log('[Electron Main] Sanitized migrated settings (disabled sharing, cleared pushbullet token).');
+    }
   } catch (err) {
     console.error('Failed to migrate settings:', err);
   }
@@ -465,7 +484,7 @@ if (!fs.existsSync(settingsPath)) {
     },
     "sharing": {
         "enabled": false,
-        "service": "localhostrun",
+        "service": "cloudflared",
         "ngrok_token": "",
         "ngrok_domain": "",
         "autostart": false,
@@ -772,6 +791,185 @@ async function waitForBackend(port, timeoutMs = 60000) {
   return false;
 }
 
+async function verifyTunnelUrl(url, timeoutMs = 60000) {
+  const start = Date.now();
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(url);
+  } catch (e) {
+    console.error(`[Tunnel verification] Invalid URL: ${url}`, e);
+    return false;
+  }
+  
+  console.log(`[Tunnel verification] Starting checks for ${url} (timeout: ${timeoutMs}ms)...`);
+  
+  while (Date.now() - start < timeoutMs) {
+    if (!sharingEnabled || !activeTunnelProc) {
+      console.log(`[Tunnel verification] Aborted because sharing was disabled or process exited.`);
+      return false;
+    }
+    
+    // Attempt to bypass local DNS cache/issues by resolving domain IP using Google DoH
+    let targetHost = parsedUrl.hostname;
+    try {
+      const ips = await resolveDomainIP(parsedUrl.hostname);
+      if (ips && ips.length > 0) {
+        console.log(`[Tunnel verification] Resolved IP ${ips[0]} for ${parsedUrl.hostname} via DoH.`);
+        targetHost = ips[0];
+      }
+    } catch (dohErr) {
+      console.warn(`[Tunnel verification] DoH resolution failed for ${parsedUrl.hostname}:`, dohErr);
+    }
+    
+    try {
+      const success = await new Promise((resolve) => {
+        const reqOpts = {
+          hostname: targetHost,
+          port: parsedUrl.port || 443,
+          path: parsedUrl.pathname + parsedUrl.search,
+          method: 'GET',
+          timeout: 4000,
+          servername: parsedUrl.hostname, // Crucial for SNI SSL handshake!
+          rejectUnauthorized: true,
+          headers: {
+            'Host': parsedUrl.hostname, // Crucial for routing when targetHost is an IP!
+            'User-Agent': 'Adam-Assistant-Verification/1.0'
+          }
+        };
+        
+        // Note: do not pass the full URL string to https.request if connecting directly to resolved IP!
+        const req = https.request(reqOpts, (res) => {
+          console.log(`[Tunnel verification] Status: ${res.statusCode} for ${url}`);
+          if (res.statusCode >= 200 && res.statusCode < 500) {
+            resolve(true);
+          } else {
+            resolve(false);
+          }
+        });
+        
+        req.on('error', (err) => {
+          const errMsg = err.message || '';
+          if (err.code === 'EPROTO' || err.code === 'ECONNRESET' || err.code === 'ENOTFOUND' || errMsg.includes('SSL') || errMsg.includes('TLS') || errMsg.includes('alert')) {
+            console.log(`[Tunnel verification] SSL handshake/provisioning in progress (waiting for DNS/certificate)...`);
+          } else {
+            console.log(`[Tunnel verification] Error checking ${url}: ${err.message}`);
+          }
+          resolve(false);
+        });
+        
+        req.on('timeout', () => {
+          req.destroy();
+          console.log(`[Tunnel verification] Connection timed out (server busy or handshaking)...`);
+          resolve(false);
+        });
+        
+        req.end();
+      });
+      
+      if (success) {
+        console.log(`[Tunnel verification] Successfully verified that ${url} is online and visitable!`);
+        return true;
+      }
+    } catch (e) {
+      console.error(`[Tunnel verification] Iteration error:`, e);
+    }
+    
+    // Wait before retrying (1.5 seconds)
+    await new Promise(r => setTimeout(r, 1500));
+  }
+  
+  console.log(`[Tunnel verification] Verification timed out after ${timeoutMs}ms for ${url}`);
+  return false;
+}
+
+function downloadFile(url, destPath) {
+  return new Promise((resolve, reject) => {
+    const dir = path.dirname(destPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    
+    const file = fs.createWriteStream(destPath);
+    
+    function get(urlToGet) {
+      https.get(urlToGet, (response) => {
+        // Handle redirects
+        if ([301, 302, 307, 308].includes(response.statusCode) && response.headers.location) {
+          get(response.headers.location);
+          return;
+        }
+        
+        if (response.statusCode !== 200) {
+          file.close();
+          fs.unlink(destPath, () => {});
+          reject(new Error(`Failed to download binary: HTTP ${response.statusCode}`));
+          return;
+        }
+        
+        response.pipe(file);
+        
+        file.on('finish', () => {
+          file.close();
+          resolve();
+        });
+      }).on('error', (err) => {
+        file.close();
+        fs.unlink(destPath, () => {});
+        reject(err);
+      });
+    }
+    
+    get(url);
+  });
+}
+
+function getCloudflaredDownloadUrl() {
+  const platform = process.platform;
+  const arch = process.arch;
+  
+  if (platform === 'win32') {
+    return arch === 'x64' 
+      ? 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe'
+      : 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-386.exe';
+  } else if (platform === 'darwin') {
+    return arch === 'arm64'
+      ? 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-arm64'
+      : 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-amd64';
+  } else {
+    // Linux
+    return arch === 'arm64'
+      ? 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64'
+      : 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64';
+  }
+}
+
+async function ensureCloudflaredBinary() {
+  const userDataPath = app.getPath('userData');
+  const binDir = path.join(userDataPath, 'bin');
+  const binaryName = process.platform === 'win32' ? 'cloudflared.exe' : 'cloudflared';
+  const binaryPath = path.join(binDir, binaryName);
+  
+  if (fs.existsSync(binaryPath)) {
+    return binaryPath;
+  }
+  
+  if (!fs.existsSync(binDir)) {
+    fs.mkdirSync(binDir, { recursive: true });
+  }
+  
+  sendSharingStatus("Downloading Cloudflare Tunnel client...");
+  const downloadUrl = getCloudflaredDownloadUrl();
+  console.log(`[Cloudflare binary] Downloading from ${downloadUrl} to ${binaryPath}...`);
+  await downloadFile(downloadUrl, binaryPath);
+  
+  if (process.platform !== 'win32') {
+    fs.chmodSync(binaryPath, 0o755);
+  }
+  
+  console.log(`[Cloudflare binary] Download completed successfully.`);
+  return binaryPath;
+}
+
 async function startTunnel(config) {
   stopTunnelInternal(); // Ensure any existing processes are completely killed first
   sharingEnabled = true;
@@ -793,35 +991,32 @@ async function startTunnel(config) {
   try {
     const service = config.service || 'ngrok';
     
-    if (service === 'localhostrun') {
-      sendSharingStatus("Checking SSH credentials...");
-      await ensureSshKeys();
+    if (service === 'localhostrun' || service === 'cloudflared') {
+      let binaryPath;
+      try {
+        binaryPath = await ensureCloudflaredBinary();
+      } catch (binErr) {
+        console.error("[Cloudflare binary] Download/check failed:", binErr);
+        tunnelStatus = 'error';
+        tunnelError = `Failed to get Cloudflare binary: ${binErr.message}. Ensure you are connected to the internet.`;
+        sendSharingStatus();
+        return;
+      }
       
-      sendSharingStatus("Resolving tunnel endpoints...");
-      const sshHost = await getSshHostForDomain("localhost.run");
-      
-      sendSharingStatus("Connecting via localhost.run... (may take up to 10s)");
+      sendSharingStatus("Starting Cloudflare tunnel...");
       
       const args = [
-        "-T",
-        "-o", "StrictHostKeyChecking=no",
-        "-o", "UserKnownHostsFile=NUL",
-        "-o", "ServerAliveInterval=60",
-        "-o", "ServerAliveCountMax=720",
-        "-o", "ConnectTimeout=10",
-        "-o", "ExitOnForwardFailure=yes",
-        "-R", "80:127.0.0.1:8000",
-        `nokey@${sshHost}`
+        "tunnel", "--url", "http://127.0.0.1:8000", "--protocol", "http2"
       ];
       
-      activeTunnelProc = child_process.spawn("ssh", args);
+      activeTunnelProc = child_process.spawn(binaryPath, args);
       
       let isConnecting = true;
       const timeoutId = setTimeout(() => {
         if (isConnecting) {
           isConnecting = false;
           tunnelStatus = 'error';
-          tunnelError = 'Connection to localhost.run timed out. Verify your internet connection or try Ngrok instead.';
+          tunnelError = 'Connection to Cloudflare Tunnel timed out. Verify your internet connection or try Ngrok instead.';
           sendSharingStatus();
           if (activeTunnelProc) {
             try { activeTunnelProc.kill(); } catch(e){}
@@ -831,41 +1026,47 @@ async function startTunnel(config) {
       }, 30000);
 
       let stdoutAccumulator = "";
-      activeTunnelProc.stdout.on('data', (data) => {
+      const handleData = async (data) => {
         const chunk = data.toString();
         stdoutAccumulator += chunk;
-        console.log(`[localhost.run STDOUT]: ${chunk.trim()}`);
+        console.log(`[Cloudflare STDOUT/STDERR]: ${chunk.trim()}`);
         
-        const match = stdoutAccumulator.match(/https:\/\/[a-zA-Z0-9-]+\.lhr\.life/);
+        const match = stdoutAccumulator.match(/https:\/\/[a-zA-Z0-9-]+\.trycloudflare\.com/);
         if (match && isConnecting) {
           clearTimeout(timeoutId);
           isConnecting = false;
+          
           tunnelUrl = match[0];
-          tunnelStatus = 'online';
-          reconnectAttempts = 0; // Reset on success
-          sendSharingStatus();
-          triggerEmailNotification(tunnelUrl);
-          startTunnelLifetimeLimit();
-          triggerPushbulletNotification(`Adam Web Sharing is ONLINE!\nTunnel URL: ${tunnelUrl}`);
-        }
-      });
-      
-      activeTunnelProc.stderr.on('data', (data) => {
-        const line = data.toString();
-        console.log(`[localhost.run STDERR]: ${line.trim()}`);
-        if (line.includes("Could not resolve") || line.includes("Permission denied") || line.includes("Connection refused")) {
-          if (isConnecting) {
-            clearTimeout(timeoutId);
-            isConnecting = false;
-            tunnelStatus = 'error';
-            tunnelError = line.trim();
+          
+          tunnelStatus = 'handshaking';
+          sendSharingStatus("SSL Handshake in progress (verifying HTTPS)...");
+          
+          console.log(`[Cloudflare] Found URL ${tunnelUrl}. Starting verification...`);
+          const visitable = await verifyTunnelUrl(tunnelUrl, 60000);
+          
+          if (visitable && sharingEnabled && activeTunnelProc) {
+            tunnelStatus = 'online';
+            reconnectAttempts = 0; // Reset on success
             sendSharingStatus();
+            triggerEmailNotification(tunnelUrl);
+            startTunnelLifetimeLimit();
+            triggerPushbulletNotification(`Adam Web Sharing is ONLINE!\nTunnel URL: ${tunnelUrl}`);
+          } else if (!visitable && sharingEnabled && activeTunnelProc) {
+            tunnelStatus = 'error';
+            tunnelError = 'Cloudflare Tunnel URL was generated but connection verification failed.';
+            sendSharingStatus();
+            try { activeTunnelProc.kill(); } catch(e){}
+            activeTunnelProc = null;
+            tunnelUrl = null;
           }
         }
-      });
+      };
+
+      activeTunnelProc.stdout.on('data', handleData);
+      activeTunnelProc.stderr.on('data', handleData);
       
       activeTunnelProc.on('close', (code) => {
-        console.log(`[localhost.run] Process exited with code ${code}`);
+        console.log(`[Cloudflare] Process exited with code ${code}`);
         clearTimeout(timeoutId);
         isConnecting = false;
         activeTunnelProc = null;
@@ -900,7 +1101,7 @@ async function startTunnel(config) {
       });
       
       activeTunnelProc.on('error', (err) => {
-        console.error('[localhost.run] Process error:', err);
+        console.error('[Cloudflare] Process error:', err);
         clearTimeout(timeoutId);
         isConnecting = false;
         activeTunnelProc = null;
@@ -909,7 +1110,6 @@ async function startTunnel(config) {
         tunnelError = err.message || err.toString();
         sendSharingStatus();
       });
-      
     } else if (service === 'ngrok') {
       if (!config.ngrok_token || !config.ngrok_token.trim()) {
         throw new Error("Ngrok Authtoken is required.");
@@ -930,16 +1130,33 @@ async function startTunnel(config) {
       
       let isNgrokConnecting = true;
       
-      const ngrokTimeout = setTimeout(() => {
+      const ngrokTimeout = setTimeout(async () => {
         if (isNgrokConnecting) {
           isNgrokConnecting = false;
-          tunnelUrl = `https://${config.ngrok_domain.trim()}`;
-          tunnelStatus = 'online';
-          reconnectAttempts = 0; // Reset on success
-          sendSharingStatus();
-          triggerEmailNotification(tunnelUrl);
-          startTunnelLifetimeLimit();
-          triggerPushbulletNotification(`Adam Web Sharing (Ngrok) is ONLINE!\nTunnel URL: ${tunnelUrl}`);
+          const rawUrl = `https://${config.ngrok_domain.trim()}`;
+          tunnelUrl = rawUrl;
+          
+          tunnelStatus = 'handshaking';
+          sendSharingStatus("Verifying Ngrok connection...");
+          
+          console.log(`[Ngrok] Starting verification for ${tunnelUrl}...`);
+          const visitable = await verifyTunnelUrl(tunnelUrl, 60000);
+          
+          if (visitable && sharingEnabled && activeTunnelProc) {
+            tunnelStatus = 'online';
+            reconnectAttempts = 0; // Reset on success
+            sendSharingStatus();
+            triggerEmailNotification(tunnelUrl);
+            startTunnelLifetimeLimit();
+            triggerPushbulletNotification(`Adam Web Sharing (Ngrok) is ONLINE!\nTunnel URL: ${tunnelUrl}`);
+          } else if (!visitable && sharingEnabled && activeTunnelProc) {
+            tunnelStatus = 'error';
+            tunnelError = 'Ngrok client started but connection verification failed.';
+            sendSharingStatus();
+            try { activeTunnelProc.kill(); } catch(e){}
+            activeTunnelProc = null;
+            tunnelUrl = null;
+          }
         }
       }, 3000);
 

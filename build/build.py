@@ -108,10 +108,12 @@ def compile_python_backend(use_pyinstaller=True):
         try:
             log("Compiling Python backend with PyInstaller (this might take a few minutes)...")
             
-            # Start process with stdout/stderr piped
+            env_copy = os.environ.copy()
+            env_copy["TRANSFORMERS_NO_LAZY_LOADING"] = "1"
             process = subprocess.Popen(
                 build_cmd,
                 cwd=BACKEND_DIR,
+                env=env_copy,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -237,6 +239,80 @@ def compile_python_backend(use_pyinstaller=True):
             return False
     return False
 
+def sanitize_staged_backend():
+    # Sanitize settings.json in the staging folder to prevent leaking developer keys/credentials
+    staged_settings_path = os.path.join(TEMP_BACKEND_STAGE, "config", "settings.json")
+    if os.path.exists(staged_settings_path):
+        try:
+            import json
+            with open(staged_settings_path, "r", encoding="utf-8") as f:
+                settings_data = json.load(f)
+            
+            # Reset sensitive keys to empty strings/defaults
+            if "sharing" in settings_data:
+                settings_data["sharing"]["enabled"] = False
+                settings_data["sharing"]["autostart"] = False
+                settings_data["sharing"]["email_enabled"] = False
+                settings_data["sharing"]["email_on_startup"] = False
+                settings_data["sharing"]["remote_control_enabled"] = False
+                settings_data["sharing"]["ngrok_token"] = ""
+                settings_data["sharing"]["ngrok_domain"] = ""
+                settings_data["sharing"]["email_user"] = ""
+                settings_data["sharing"]["email_pass"] = ""
+                settings_data["sharing"]["email_recipient"] = ""
+                if "pushbullet" in settings_data["sharing"]:
+                    settings_data["sharing"]["pushbullet"]["enabled"] = False
+                    settings_data["sharing"]["pushbullet"]["token_encrypted"] = ""
+            
+            with open(staged_settings_path, "w", encoding="utf-8") as f:
+                json.dump(settings_data, f, indent=4)
+            log("Sanitized staged settings.json (removed credentials and personal keys).")
+        except Exception as e:
+            log(f"Failed to sanitize staged settings.json: {e}", "WARNING")
+
+    # Ensure sessions.json in the staging folder is always empty
+    staged_sessions_path = os.path.join(TEMP_BACKEND_STAGE, "config", "sessions.json")
+    try:
+        with open(staged_sessions_path, "w", encoding="utf-8") as f:
+            f.write("[]\n")
+        log("Ensured staged sessions.json is empty.")
+    except Exception as e:
+        log(f"Failed to empty staged sessions.json: {e}", "WARNING")
+
+def prune_staged_backend():
+    """
+    Prunes unnecessary developer files (.lib, .a, .h, .hpp, .cpp, .c, .obj, .o, .pdb)
+    and heavy unused CUDA binaries (cusparse, cusolver, cufft, cudnn_engines_precompiled)
+    from the staging folder to fit within GitHub Releases file size limits.
+    """
+    log("Pruning unnecessary developer files and unused CUDA DLLs for GitHub Releases...")
+    pruned_count = 0
+    pruned_size = 0
+    extensions_to_prune = {'.lib', '.a', '.h', '.hpp', '.cpp', '.c', '.obj', '.o', '.pdb'}
+    unused_cuda_prefixes = ('cudnn_engines_precompiled',)
+    
+    for root, dirs, files in os.walk(TEMP_BACKEND_STAGE):
+        for file in files:
+            file_lower = file.lower()
+            should_prune = False
+            ext = os.path.splitext(file_lower)[1]
+            
+            if ext in extensions_to_prune:
+                should_prune = True
+            elif ext == '.dll':
+                if file_lower.startswith(unused_cuda_prefixes):
+                    should_prune = True
+            
+            if should_prune:
+                file_path = os.path.join(root, file)
+                try:
+                    pruned_size += os.path.getsize(file_path)
+                    os.remove(file_path)
+                    pruned_count += 1
+                except Exception:
+                    pass
+    log(f"Successfully pruned {pruned_count} files, saving {pruned_size/1e6:.2f} MB.")
+
 def stage_backend(compiled=False, llama_path=None):
     """
     Creates a clean temp_backend staging directory to be copied as an extra resource.
@@ -291,6 +367,9 @@ def stage_backend(compiled=False, llama_path=None):
             if os.path.exists(renderer_src):
                 log("Bundling renderer directory into compiled staging directory...")
                 shutil.copytree(renderer_src, os.path.join(TEMP_BACKEND_STAGE, "renderer"))
+            
+            prune_staged_backend()
+            sanitize_staged_backend()
             return
 
     # Fallback/Default: Copy source files and virtual env, excluding weight/logs/cache files
@@ -309,10 +388,13 @@ def stage_backend(compiled=False, llama_path=None):
             # Exclude large pip caching blocks
             elif name in ["pip-cache", "pip", "cache", "logs", "screenshots", "outputs"] and "env" in path:
                 ignored.append(name)
+            # Exclude heavy unused packages in virtualenv site-packages to reduce size
+            elif "site-packages" in path and name in ["catboost", "xgboost", "gradio", "plotly", "pandas", "matplotlib", "seaborn", "IPython", "jupyter", "lightgbm", "tensorboard", "notebook"]:
+                ignored.append(name)
         return ignored
 
-    # Copy src, config, env directories and config files
-    for folder in ["src", "config", "env"]:
+    # Copy src, config, env, voices, models directories and config files
+    for folder in ["src", "config", "env", "voices", "models"]:
         src_folder = os.path.join(BACKEND_DIR, folder)
         dest_folder = os.path.join(TEMP_BACKEND_STAGE, folder)
         if os.path.exists(src_folder):
@@ -335,6 +417,9 @@ def stage_backend(compiled=False, llama_path=None):
     if os.path.exists(renderer_src):
         log("Bundling renderer directory into fallback staging directory...")
         shutil.copytree(renderer_src, os.path.join(TEMP_BACKEND_STAGE, "renderer"))
+    
+    prune_staged_backend()
+    sanitize_staged_backend()
 
 def configure_electron_builder():
     log("Configuring electron-builder targets in packaging manifest...")
@@ -371,10 +456,12 @@ def configure_electron_builder():
             "allowToChangeInstallationDirectory": True,
             "createDesktopShortcut": True,
             "createStartMenuShortcut": True,
-            "shortcutName": "Adam"
+            "shortcutName": "Adam",
+            "deleteAppDataOnUninstall": True,
+            "include": "build/installer.nsh"
         },
         "nsisWeb": {
-            "appPackageUrl": "http://localhost"
+            "appPackageUrl": "https://github.com/TejasAI31/Adam/releases/download/v${version}/"
         }
     }
 

@@ -46,6 +46,159 @@ document.addEventListener('DOMContentLoaded', () => {
     mobileSidebarOverlay.addEventListener('click', closeMobileMenus);
   }
 
+  // --- SPOTLIGHT HOVER LIGHT EFFECT ---
+  const inputWrapper = document.querySelector('.input-wrapper');
+  if (inputWrapper) {
+    inputWrapper.addEventListener('mousemove', (e) => {
+      const rect = inputWrapper.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      inputWrapper.style.setProperty('--mouse-x', `${x}px`);
+      inputWrapper.style.setProperty('--mouse-y', `${y}px`);
+    });
+  }
+
+  // --- COMMAND PALETTE MODAL INITIALIZATION ---
+  const paletteOverlay = document.createElement('div');
+  paletteOverlay.className = 'modal-overlay';
+  paletteOverlay.id = 'command-palette-modal';
+  paletteOverlay.style.cssText = 'display: none; justify-content: center; align-items: flex-start; padding-top: 80px; z-index: 100000;';
+  paletteOverlay.innerHTML = `
+    <div class="command-palette-card" style="width: 550px; background: rgba(9, 10, 15, 0.95); backdrop-filter: blur(24px); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; box-shadow: 0 20px 50px rgba(0,0,0,0.6); overflow: hidden; display: flex; flex-direction: column;">
+      <div class="command-palette-input-row" style="display: flex; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.06); padding: 14px 16px; gap: 12px;">
+        <svg style="width: 18px; height: 18px; color: var(--text-muted); flex-shrink: 0;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+        </svg>
+        <input type="text" id="command-palette-search" placeholder="Search commands, tabs, and session actions..." style="flex: 1; background: transparent !important; border: none !important; color: var(--text-main) !important; font-size: 14px !important; outline: none !important; padding: 0 !important; width: 100%;">
+        <span class="kbd-badge" style="font-size: 9px; padding: 2px 5px; color: var(--text-muted); line-height: 1;">ESC</span>
+      </div>
+      <div class="command-palette-list" id="command-palette-list" style="max-height: 320px; overflow-y: auto; padding: 8px;">
+        <!-- Commands listed dynamically -->
+      </div>
+    </div>
+  `;
+  document.body.appendChild(paletteOverlay);
+
+  const paletteSearch = paletteOverlay.querySelector('#command-palette-search');
+  const paletteList = paletteOverlay.querySelector('#command-palette-list');
+  let selectedCommandIndex = 0;
+  let filteredCommands = [];
+
+  const commands = [
+    { name: "Go to Chat View", category: "Navigation", action: () => triggerTabSwitch("chat") },
+    { name: "Go to Tools Hub", category: "Navigation", action: () => triggerTabSwitch("tools") },
+    { name: "Go to Logs Console", category: "Navigation", action: () => triggerTabSwitch("logs") },
+    { name: "Go to Settings Panel", category: "Navigation", action: () => triggerTabSwitch("config") },
+    { name: "Go to Web Sharing Suite", category: "Navigation", action: () => triggerTabSwitch("sharing") },
+    { name: "Go to Remote Control View", category: "Navigation", action: () => triggerTabSwitch("remote") },
+    { name: "Create New Chat Session", category: "Session", action: () => createNewSession() },
+    { name: "Clear Session Chat History", category: "Session", action: () => {
+      const btn = document.getElementById('btn-clear-chat');
+      if (btn) btn.click();
+    }},
+    { name: "Release VRAM (Unload models)", category: "System", action: () => {
+      const btn = document.getElementById('btn-unload-models');
+      if (btn) btn.click();
+    }},
+    { name: "Toggle Passive Mode", category: "System", action: () => {
+      const btn = document.getElementById('btn-passive-mode');
+      if (btn) btn.click();
+    }},
+    { name: "Exit System / Shut Down", category: "System", action: () => {
+      const btn = document.getElementById('btn-exit-app');
+      if (btn) btn.click();
+    }}
+  ];
+
+  function triggerTabSwitch(tabName) {
+    const tabEl = document.querySelector(`.nav-tab[data-tab="${tabName}"]`);
+    if (tabEl) tabEl.click();
+  }
+
+  function toggleCommandPalette() {
+    if (paletteOverlay.style.display === 'none') {
+      paletteOverlay.style.display = 'flex';
+      paletteSearch.value = '';
+      selectedCommandIndex = 0;
+      renderCommandList();
+      setTimeout(() => paletteSearch.focus(), 50);
+    } else {
+      paletteOverlay.style.display = 'none';
+    }
+  }
+
+  function renderCommandList() {
+    const query = paletteSearch.value.toLowerCase().trim();
+    filteredCommands = commands.filter(cmd => 
+      cmd.name.toLowerCase().includes(query) || 
+      cmd.category.toLowerCase().includes(query)
+    );
+
+    paletteList.innerHTML = '';
+    if (filteredCommands.length === 0) {
+      paletteList.innerHTML = `<div style="padding: 16px; text-align: center; color: var(--text-dim); font-size: 13px;">No commands found</div>`;
+      return;
+    }
+
+    filteredCommands.forEach((cmd, idx) => {
+      const item = document.createElement('div');
+      item.className = `command-palette-item ${idx === selectedCommandIndex ? 'selected' : ''}`;
+      item.innerHTML = `
+        <span>${cmd.name}</span>
+        <span class="item-meta">${cmd.category}</span>
+      `;
+      item.addEventListener('click', () => {
+        cmd.action();
+        toggleCommandPalette();
+      });
+      paletteList.appendChild(item);
+    });
+
+    const selectedItem = paletteList.querySelector('.selected');
+    if (selectedItem) {
+      selectedItem.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  paletteSearch.addEventListener('input', () => {
+    selectedCommandIndex = 0;
+    renderCommandList();
+  });
+
+  paletteSearch.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      selectedCommandIndex = (selectedCommandIndex + 1) % filteredCommands.length;
+      renderCommandList();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      selectedCommandIndex = (selectedCommandIndex - 1 + filteredCommands.length) % filteredCommands.length;
+      renderCommandList();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (filteredCommands[selectedCommandIndex]) {
+        filteredCommands[selectedCommandIndex].action();
+        toggleCommandPalette();
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      toggleCommandPalette();
+    }
+  });
+
+  paletteOverlay.addEventListener('click', (e) => {
+    if (e.target === paletteOverlay) {
+      toggleCommandPalette();
+    }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      toggleCommandPalette();
+    }
+  });
+
   // Resource Monitor elements
   const cpuVal = document.getElementById('cpu-val');
   const cpuBar = document.getElementById('cpu-bar');
@@ -74,6 +227,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnInterrupt = document.getElementById('btn-interrupt');
   const voiceDot = document.getElementById('voice-dot');
   const voiceStatusText = document.getElementById('voice-status-text');
+
+  // Track background active SSE chunk streams for each message id
+  let activeStreams = {};
 
   // Logs Elements
   const consoleLogs = document.getElementById('console-logs');
@@ -142,6 +298,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  let lastSttLoaded = null;
+  let lastTtsLoaded = null;
+  let lastCpuWidth = null;
+  let lastGpuWidth = null;
+  let lastVramWidth = null;
+  let lastVramText = null;
+  let lastContextTurns = null;
+  let cachedBtnPassiveMode = null;
+
   async function updateResourceStats() {
     try {
       const response = await fetch(`${BACKEND_URL}/api/resources`);
@@ -157,31 +322,54 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       
-      cpuVal.textContent = `${data.cpu}%`;
-      cpuBar.style.width = `${data.cpu}%`;
-      
-      gpuVal.textContent = `${data.gpu}%`;
-      gpuBar.style.width = `${data.gpu}%`;
-      
-      vramVal.textContent = `${data.vram.used} GB / ${data.vram.total} GB`;
-      vramBar.style.width = `${data.vram.percent}%`;
-
-      contextTurnsVal.textContent = `${data.context_turns} turns`;
-
-      // STT capability block off
-      const tabVoice = document.getElementById('tab-voice');
-      if (data.stt_loaded === false) {
-        btnToggleMic.style.opacity = '0.25';
-        btnToggleMic.style.pointerEvents = 'none';
-        btnToggleMic.title = 'Speech-to-text model not loaded';
-      } else {
-        btnToggleMic.style.opacity = '1.0';
-        btnToggleMic.style.pointerEvents = 'auto';
-        btnToggleMic.title = 'Toggle voice pipeline';
+      const cpuWidth = `${data.cpu}%`;
+      if (lastCpuWidth !== cpuWidth) {
+        cpuVal.textContent = cpuWidth;
+        cpuBar.style.width = cpuWidth;
+        lastCpuWidth = cpuWidth;
       }
       
+      const gpuWidth = `${data.gpu}%`;
+      if (lastGpuWidth !== gpuWidth) {
+        gpuVal.textContent = gpuWidth;
+        gpuBar.style.width = gpuWidth;
+        lastGpuWidth = gpuWidth;
+      }
+      
+      const vramText = `${data.vram.used} GB / ${data.vram.total} GB`;
+      if (lastVramText !== vramText) {
+        vramVal.textContent = vramText;
+        lastVramText = vramText;
+      }
+      
+      const vramWidth = `${data.vram.percent}%`;
+      if (lastVramWidth !== vramWidth) {
+        vramBar.style.width = vramWidth;
+        lastVramWidth = vramWidth;
+      }
+
+      if (lastContextTurns !== data.context_turns) {
+        contextTurnsVal.textContent = `${data.context_turns} turns`;
+        lastContextTurns = data.context_turns;
+      }
+
+      // STT capability block off
+      if (lastSttLoaded !== data.stt_loaded) {
+        if (data.stt_loaded === false) {
+          btnToggleMic.style.opacity = '0.25';
+          btnToggleMic.style.pointerEvents = 'none';
+          btnToggleMic.title = 'Speech-to-text model not loaded';
+        } else {
+          btnToggleMic.style.opacity = '1.0';
+          btnToggleMic.style.pointerEvents = 'auto';
+          btnToggleMic.title = 'Toggle voice pipeline';
+        }
+        lastSttLoaded = data.stt_loaded;
+      }
+      
+      const tabVoice = document.getElementById('tab-voice');
       // Show Voice selection tab if either STT or TTS is loaded
-      if (tabVoice) {
+      if (tabVoice && (lastSttLoaded !== data.stt_loaded || lastTtsLoaded !== data.tts_loaded)) {
         if (data.stt_loaded || data.tts_loaded) {
           tabVoice.style.display = 'flex';
         } else {
@@ -190,20 +378,25 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       // TTS capability block off
-      if (data.tts_loaded === false) {
-        btnTogglePlaybackSpeak.style.opacity = '0.25';
-        btnTogglePlaybackSpeak.style.pointerEvents = 'none';
-        btnTogglePlaybackSpeak.title = 'Text-to-speech model not loaded';
-      } else {
-        btnTogglePlaybackSpeak.style.opacity = '1.0';
-        btnTogglePlaybackSpeak.style.pointerEvents = 'auto';
-        btnTogglePlaybackSpeak.title = 'Speech synthesis output';
+      if (lastTtsLoaded !== data.tts_loaded) {
+        if (data.tts_loaded === false) {
+          btnTogglePlaybackSpeak.style.opacity = '0.25';
+          btnTogglePlaybackSpeak.style.pointerEvents = 'none';
+          btnTogglePlaybackSpeak.title = 'Text-to-speech model not loaded';
+        } else {
+          btnTogglePlaybackSpeak.style.opacity = '1.0';
+          btnTogglePlaybackSpeak.style.pointerEvents = 'auto';
+          btnTogglePlaybackSpeak.title = 'Speech synthesis output';
+        }
+        lastTtsLoaded = data.tts_loaded;
       }
 
       // Check if both STT and TTS are loaded to show/hide the Passive button
-      const btnPassiveMode = document.getElementById('btn-passive-mode');
-      if (btnPassiveMode) {
-        btnPassiveMode.style.display = 'flex';
+      if (!cachedBtnPassiveMode) {
+        cachedBtnPassiveMode = document.getElementById('btn-passive-mode');
+      }
+      if (cachedBtnPassiveMode && cachedBtnPassiveMode.style.display !== 'flex') {
+        cachedBtnPassiveMode.style.display = 'flex';
       }
 
       // Auto context compression after vram hits >95%
@@ -219,6 +412,60 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- CHAT SESSION MANAGEMENT ---
   let isSyncing = false;
+
+  function mergeSessions(local, fetched) {
+    const localArr = local || [];
+    const fetchedArr = fetched || [];
+    const map = new Map();
+    
+    // Index all sessions from both local and fetched
+    const allSessionIds = new Set([
+      ...localArr.map(s => s.id),
+      ...fetchedArr.map(s => s.id)
+    ]);
+
+    allSessionIds.forEach(id => {
+      const loc = localArr.find(s => s.id === id);
+      const fet = fetchedArr.find(s => s.id === id);
+
+      if (loc && !fet) {
+        map.set(id, loc);
+      } else if (!loc && fet) {
+        map.set(id, fet);
+      } else {
+        // Both exist: merge their message lists by unique message ID
+        const baseSession = { ...fet, ...loc };
+        const msgMap = new Map();
+        
+        // Add local messages
+        (loc.messages || []).forEach(m => {
+          if (m && m.id) msgMap.set(m.id, m);
+        });
+        
+        // Add fetched messages
+        (fet.messages || []).forEach(m => {
+          if (m && m.id) msgMap.set(m.id, m);
+        });
+
+        baseSession.messages = Array.from(msgMap.values());
+        map.set(id, baseSession);
+      }
+    });
+    
+    const merged = Array.from(map.values());
+    
+    // Sort by creation time (descending - newest first)
+    merged.sort((a, b) => {
+      const tA = parseInt(a.id.replace('session_', '')) || 0;
+      const tB = parseInt(b.id.replace('session_', '')) || 0;
+      return tB - tA;
+    });
+    
+    return merged;
+  }
+
+  let initialSyncCompleted = false;
+
   async function syncSessions(forceRender = false) {
     if (isSyncing) return;
     isSyncing = true;
@@ -227,32 +474,50 @@ document.addEventListener('DOMContentLoaded', () => {
       const response = await fetch(`${BACKEND_URL}/api/sessions?client=${clientType}`);
       if (response.ok) {
         const fetched = await response.json();
-        const fetchedStr = JSON.stringify(fetched);
-        const localStr = JSON.stringify(sessions);
         
-        if (fetched.length === 0 && sessions.length > 0) {
-          await fetch(`${BACKEND_URL}/api/sessions`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(sessions)
-          });
-        } else if (fetched.length > 0 && (fetchedStr !== localStr || forceRender)) {
-          sessions = fetched;
-          localStorage.setItem('adam_sessions', fetchedStr);
+        // Safely merge local sessions with fetched sessions
+        const merged = mergeSessions(sessions, fetched);
+        const mergedStr = JSON.stringify(merged);
+        const localStr = JSON.stringify(sessions);
+        const fetchedStr = JSON.stringify(fetched);
+        
+        let needsSave = false;
+        
+        // Update local state if different or forced
+        if (mergedStr !== localStr || forceRender) {
+          sessions = merged;
+          localStorage.setItem('adam_sessions', mergedStr);
           
           if (!currentSessionId || !sessions.some(s => s.id === currentSessionId)) {
-            currentSessionId = sessions[0].id;
-            localStorage.setItem('adam_active_session_id', currentSessionId);
+            currentSessionId = sessions.length > 0 ? sessions[0].id : null;
+            if (currentSessionId) {
+              localStorage.setItem('adam_active_session_id', currentSessionId);
+            } else {
+              localStorage.removeItem('adam_active_session_id');
+            }
           }
           
           renderSessions();
-          selectSession(currentSessionId, false);
+          if (currentSessionId) {
+            selectSession(currentSessionId, false);
+          }
+          needsSave = true;
+        }
+        
+        // Sync back to backend if backend list differs from merged list
+        if (mergedStr !== fetchedStr || needsSave) {
+          await fetch(`${BACKEND_URL}/api/sessions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: mergedStr
+          });
         }
       }
     } catch (e) {
       console.warn("Error syncing sessions from backend:", e);
     } finally {
       isSyncing = false;
+      initialSyncCompleted = true;
     }
   }
 
@@ -278,66 +543,165 @@ document.addEventListener('DOMContentLoaded', () => {
   function renderSessions() {
     sessionList.innerHTML = '';
     if (sessions.length === 0) {
-      createNewSession("Default Session");
+      if (initialSyncCompleted) {
+        createNewSession("Default Session");
+      }
       return;
     }
 
     sessions.forEach(session => {
       const item = document.createElement('div');
       item.className = `session-item ${session.id === currentSessionId ? 'active' : ''}`;
+      item.dataset.sessionId = session.id;
       item.innerHTML = `
-        <span class="session-name" title="Double click to rename">${session.name}</span>
-        <button class="delete-session" title="Delete session">
-          <svg style="width: 14px; height: 14px" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+        <span class="session-name">${session.name}</span>
+        <button class="session-actions-btn" title="Actions">
+          <svg style="width: 14px; height: 14px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="12" cy="5" r="1.5" fill="currentColor"></circle>
+            <circle cx="12" cy="12" r="1.5" fill="currentColor"></circle>
+            <circle cx="12" cy="19" r="1.5" fill="currentColor"></circle>
           </svg>
         </button>
       `;
       
       item.addEventListener('click', (e) => {
-        if (e.target.closest('.delete-session')) return;
+        if (e.target.closest('.session-actions-btn')) return;
         selectSession(session.id);
       });
 
-      const nameSpan = item.querySelector('.session-name');
-      nameSpan.addEventListener('dblclick', () => {
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.value = session.name;
-        input.style.width = '100%';
-        input.style.background = 'rgba(0,0,0,0.6)';
-        input.style.border = '1px solid var(--accent-cyan)';
-        input.style.color = 'var(--text-main)';
-        input.style.padding = '2px 4px';
-        input.style.borderRadius = '4px';
-        
-        input.addEventListener('blur', () => {
-          if (input.value.trim()) {
-            session.name = input.value.trim();
-            saveSessions();
-            renderSessions();
-            if (session.id === currentSessionId) {
-              activeSessionTitle.textContent = session.name;
-              if (mobileActiveTitle) mobileActiveTitle.textContent = session.name;
-            }
-          }
-        });
-
-        input.addEventListener('keydown', (ke) => {
-          if (ke.key === 'Enter') input.blur();
-        });
-
-        nameSpan.replaceWith(input);
-        input.focus();
-        input.select();
-      });
-
-      item.querySelector('.delete-session').addEventListener('click', () => {
-        deleteSession(session.id);
+      const actionsBtn = item.querySelector('.session-actions-btn');
+      actionsBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openSessionContextMenu(e, session.id);
       });
 
       sessionList.appendChild(item);
     });
+  }
+
+  let activeContextMenu = null;
+
+  function openSessionContextMenu(e, sessionId) {
+    if (activeContextMenu) {
+      activeContextMenu.remove();
+      activeContextMenu = null;
+    }
+    
+    const menu = document.createElement('div');
+    menu.className = 'session-context-menu';
+    menu.innerHTML = `
+      <div class="context-item" id="ctx-rename">
+        <svg style="width: 12px; height: 12px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"></path>
+        </svg>
+        <span>Rename</span>
+      </div>
+      <div class="context-item" id="ctx-duplicate">
+        <svg style="width: 12px; height: 12px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 7.5V6.108c0-1.135.845-2.098 1.976-2.192.373-.03.748-.057 1.123-.08M15.75 18H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08M15.75 18.75v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5A3.375 3.375 0 006.375 7.5H5.25m11.9-3.662a2.25 2.25 0 113.182 3.182L10.5 17.25H7.5v-3L17.15 3.588z"></path>
+        </svg>
+        <span>Duplicate</span>
+      </div>
+      <div class="context-item delete" id="ctx-delete">
+        <svg style="width: 12px; height: 12px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"></path>
+        </svg>
+        <span>Delete</span>
+      </div>
+    `;
+    
+    document.body.appendChild(menu);
+    const rect = e.currentTarget.getBoundingClientRect();
+    menu.style.top = `${rect.bottom + window.scrollY + 6}px`;
+    menu.style.left = `${rect.right + window.scrollX - 140}px`;
+    
+    setTimeout(() => {
+      menu.classList.add('show');
+    }, 10);
+    
+    activeContextMenu = menu;
+    
+    menu.querySelector('#ctx-rename').addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      menu.remove();
+      activeContextMenu = null;
+      renameSessionUI(sessionId);
+    });
+    
+    menu.querySelector('#ctx-duplicate').addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      menu.remove();
+      activeContextMenu = null;
+      duplicateSession(sessionId);
+    });
+    
+    menu.querySelector('#ctx-delete').addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      menu.remove();
+      activeContextMenu = null;
+      deleteSession(sessionId);
+    });
+    
+    const outsideClickListener = () => {
+      if (activeContextMenu === menu) {
+        menu.remove();
+        activeContextMenu = null;
+      }
+      document.removeEventListener('click', outsideClickListener);
+    };
+    setTimeout(() => {
+      document.addEventListener('click', outsideClickListener);
+    }, 50);
+  }
+
+  function duplicateSession(sessionId) {
+    const session = sessions.find(s => s.id === sessionId);
+    if (!session) return;
+    const duplicated = {
+      id: `session_${Date.now()}`,
+      name: `${session.name} (Copy)`,
+      messages: JSON.parse(JSON.stringify(session.messages)),
+      origin: session.origin
+    };
+    sessions.push(duplicated);
+    saveSessions();
+    renderSessions();
+    showToast("Session duplicated successfully!");
+  }
+
+  function renameSessionUI(sessionId) {
+    const item = document.querySelector(`[data-session-id="${sessionId}"]`);
+    if (!item) return;
+    const nameSpan = item.querySelector('.session-name');
+    if (!nameSpan) return;
+    
+    const session = sessions.find(s => s.id === sessionId);
+    if (!session) return;
+    
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = session.name;
+    input.className = 'session-rename-input';
+    
+    input.addEventListener('blur', () => {
+      if (input.value.trim()) {
+        session.name = input.value.trim();
+        saveSessions();
+        renderSessions();
+        if (session.id === currentSessionId) {
+          activeSessionTitle.textContent = session.name;
+          if (mobileActiveTitle) mobileActiveTitle.textContent = session.name;
+        }
+      }
+    });
+
+    input.addEventListener('keydown', (ke) => {
+      if (ke.key === 'Enter') input.blur();
+    });
+
+    nameSpan.replaceWith(input);
+    input.focus();
+    input.select();
   }
 
   function createNewSession(name = null) {
@@ -368,7 +732,36 @@ document.addEventListener('DOMContentLoaded', () => {
       if (mobileActiveTitle) mobileActiveTitle.textContent = session.name;
       closeMobileMenus();
       messageList.innerHTML = '';
-      session.messages.forEach(msg => appendMessageUI(msg));
+      session.messages.forEach((msg, idx) => {
+        const isLast = (idx === session.messages.length - 1);
+        appendMessageUI(msg, isLast);
+      });
+      
+      // Restore any background streaming messages active in this session
+      let hasBackgroundActiveStream = false;
+      for (const [msgId, stream] of Object.entries(activeStreams)) {
+        if (stream.sessionId === id) {
+          hasBackgroundActiveStream = true;
+          // Append the placeholder div
+          appendStreamPlaceholder(msgId);
+          // Restore tools
+          stream.tools.forEach(t => {
+            appendToolCard(msgId, { name: t.name });
+            if (t.status === 'done') {
+              resolveToolCard(msgId, { name: t.name });
+            }
+          });
+          // Restore text content
+          if (stream.text) {
+            updateStreamText(msgId, stream.text);
+          }
+        }
+      }
+      
+      if (!hasBackgroundActiveStream) {
+        showInterruptBtn(false);
+      }
+      
       scrollToBottom();
       
       if (notifyBackend) {
@@ -403,7 +796,278 @@ document.addEventListener('DOMContentLoaded', () => {
   btnNewSession.addEventListener('click', () => createNewSession());
 
   // --- MESSAGE RENDERING ---
-  function appendMessageUI(msg) {
+  function formatCodeBlocks(container) {
+    const preElements = container.querySelectorAll('pre');
+    preElements.forEach((pre) => {
+      if (pre.parentNode && pre.parentNode.classList.contains('code-container-premium')) return;
+      
+      const code = pre.querySelector('code');
+      if (!code) return;
+      
+      let lang = 'code';
+      const classes = code.className.split(' ');
+      const langClass = classes.find(c => c.startsWith('language-'));
+      if (langClass) {
+        lang = langClass.replace('language-', '').toLowerCase();
+      }
+      
+      const wrapper = document.createElement('div');
+      wrapper.className = 'code-container-premium';
+      
+      const header = document.createElement('div');
+      header.className = 'code-header-premium';
+      
+      const langBadge = document.createElement('span');
+      langBadge.className = 'code-lang-badge';
+      langBadge.textContent = lang.toUpperCase();
+      header.appendChild(langBadge);
+      
+      const actionsWrapper = document.createElement('div');
+      actionsWrapper.style.display = 'flex';
+      actionsWrapper.style.gap = '8px';
+      actionsWrapper.style.alignItems = 'center';
+
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'code-copy-btn-premium';
+      copyBtn.innerHTML = `
+        <svg class="copy-icon" style="width: 12px; height: 12px;" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path>
+        </svg>
+        <span>Copy</span>
+      `;
+      copyBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const codeText = code.textContent || '';
+        navigator.clipboard.writeText(codeText).then(() => {
+          copyBtn.classList.add('copied');
+          copyBtn.querySelector('span').textContent = 'Copied!';
+          copyBtn.querySelector('svg').innerHTML = `
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path>
+          `;
+          setTimeout(() => {
+            copyBtn.classList.remove('copied');
+            copyBtn.querySelector('span').textContent = 'Copy';
+            copyBtn.querySelector('svg').innerHTML = `
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path>
+            `;
+          }, 2000);
+        });
+      });
+      actionsWrapper.appendChild(copyBtn);
+
+      let ext = 'txt';
+      const langMap = {
+        'python': 'py', 'py': 'py',
+        'javascript': 'js', 'js': 'js',
+        'typescript': 'ts', 'ts': 'ts',
+        'json': 'json',
+        'html': 'html',
+        'css': 'css',
+        'bash': 'sh', 'sh': 'sh', 'shell': 'sh',
+        'rust': 'rs', 'rs': 'rs',
+        'go': 'go',
+        'cpp': 'cpp', 'c++': 'cpp',
+        'c': 'c',
+        'java': 'java',
+        'markdown': 'md', 'md': 'md'
+      };
+      if (langMap[lang]) {
+        ext = langMap[lang];
+      }
+
+      const downloadCodeBtn = document.createElement('button');
+      downloadCodeBtn.className = 'code-copy-btn-premium';
+      downloadCodeBtn.innerHTML = `
+        <svg style="width: 12px; height: 12px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+        </svg>
+        <span>Download</span>
+      `;
+      downloadCodeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const codeText = code.textContent || '';
+        const blob = new Blob([codeText], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `code_${Date.now()}.${ext}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showToast("Code block downloaded!");
+      });
+      actionsWrapper.appendChild(downloadCodeBtn);
+
+      header.appendChild(actionsWrapper);
+      
+      pre.parentNode.insertBefore(wrapper, pre);
+      wrapper.appendChild(header);
+      wrapper.appendChild(pre);
+    });
+  }
+
+  function formatTablesAndQuotes(container) {
+    // Format blockquotes
+    const blockquotes = container.querySelectorAll('blockquote');
+    blockquotes.forEach(bq => {
+      bq.style.display = 'block';
+    });
+
+    // Wrap tables in premium tabular sub-cards
+    const tables = container.querySelectorAll('table');
+    tables.forEach(table => {
+      if (table.parentNode && table.parentNode.classList.contains('table-container-premium')) return;
+      const wrapper = document.createElement('div');
+      wrapper.className = 'table-container-premium';
+      table.parentNode.insertBefore(wrapper, table);
+      wrapper.appendChild(table);
+    });
+  }
+
+  function collapseMessage(container, textDiv) {
+    if (textDiv.classList.contains('collapsed-text')) return;
+    textDiv.classList.add('collapsed-text');
+    
+    // Clean up any old collapse elements to avoid duplicates
+    const existingCollapse = container.querySelector('.btn-collapse-bottom');
+    if (existingCollapse) existingCollapse.remove();
+    
+    const existingExpand = container.querySelector('.btn-expand-premium');
+    if (existingExpand) existingExpand.remove();
+    
+    const expandBtn = document.createElement('button');
+    expandBtn.className = 'btn-expand-premium';
+    expandBtn.innerHTML = `
+      <span>Show Full Response</span>
+      <svg style="width: 12px; height: 12px;" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"></path>
+      </svg>
+    `;
+    
+    expandBtn.onclick = (e) => {
+      e.stopPropagation();
+      textDiv.classList.remove('collapsed-text');
+      expandBtn.remove();
+      
+      // Inject bottom collapse trigger
+      if (!container.querySelector('.btn-collapse-bottom')) {
+        const collapseBtnBottom = document.createElement('button');
+        collapseBtnBottom.className = 'btn-collapse-bottom';
+        collapseBtnBottom.innerHTML = `
+          <span>Collapse Response</span>
+          <svg style="width: 12px; height: 12px; transform: rotate(180deg);" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"></path>
+          </svg>
+        `;
+        collapseBtnBottom.onclick = (ev) => {
+          ev.stopPropagation();
+          collapseBtnBottom.remove();
+          collapseMessage(container, textDiv);
+          scrollToBottom(true);
+        };
+        textDiv.appendChild(collapseBtnBottom);
+      }
+    };
+    
+    container.appendChild(expandBtn);
+  }
+
+  function checkAndSetupCollapse(container, msgId) {
+    const textDiv = container.querySelector('.message-text');
+    if (!textDiv) return;
+
+    const charCount = textDiv.textContent.length;
+    if (charCount > 600) {
+      collapseMessage(container, textDiv);
+    }
+  }
+
+  function openImageModal(src) {
+    let overlay = document.getElementById('image-lightbox-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'image-lightbox-overlay';
+      overlay.style.cssText = `
+        position: fixed;
+        inset: 0;
+        background: rgba(4, 5, 9, 0.95);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 99999;
+        cursor: zoom-out;
+        opacity: 0;
+        transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      `;
+      
+      const img = document.createElement('img');
+      img.id = 'image-lightbox-img';
+      img.style.cssText = `
+        max-width: 90vw;
+        max-height: 90vh;
+        object-fit: contain;
+        border-radius: 12px;
+        box-shadow: 0 24px 64px rgba(0,0,0,0.6);
+        border: 1px solid rgba(255,255,255,0.08);
+        transform: scale(0.95);
+        transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      `;
+      
+      overlay.appendChild(img);
+      document.body.appendChild(overlay);
+      
+      overlay.addEventListener('click', () => {
+        overlay.style.opacity = '0';
+        img.style.transform = 'scale(0.95)';
+        setTimeout(() => {
+          overlay.style.display = 'none';
+        }, 250);
+      });
+    }
+    
+    const img = overlay.querySelector('img');
+    img.src = src;
+    overlay.style.display = 'flex';
+    
+    // Force layout reflow
+    overlay.offsetHeight;
+    
+    overlay.style.opacity = '1';
+    img.style.transform = 'scale(1)';
+  }
+
+  function createMediaFrame(src) {
+    const frame = document.createElement('div');
+    frame.className = 'media-frame-premium';
+    
+    const img = document.createElement('img');
+    img.src = src;
+    img.className = 'message-image-premium';
+    
+    const badge = document.createElement('div');
+    badge.className = 'media-badge-premium';
+    badge.innerHTML = `
+      <svg style="width: 12px; height: 12px;" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.602 10.602z"></path>
+      </svg>
+      <span>Click to Preview</span>
+    `;
+    
+    frame.appendChild(img);
+    frame.appendChild(badge);
+    
+    frame.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openImageModal(src);
+    });
+    
+    return frame;
+  }
+
+  function appendMessageUI(msg, isLast = true) {
     const container = document.createElement('div');
     container.className = `message-container ${msg.sender}`;
     container.id = msg.id || `msg_${Date.now()}`;
@@ -412,54 +1076,93 @@ document.addEventListener('DOMContentLoaded', () => {
     senderSpan.className = `message-sender ${msg.sender}`;
     senderSpan.textContent = msg.sender === 'user' ? 'User' : 'Adam';
 
-    // Header wrapper to hold sender and copy/download buttons inline
     const headerRow = document.createElement('div');
-    headerRow.style.display = 'flex';
-    headerRow.style.alignItems = 'center';
-    headerRow.style.justifyContent = 'space-between';
-    headerRow.style.width = '100%';
-    headerRow.style.marginBottom = '6px';
+    headerRow.className = 'message-header-row';
+    headerRow.appendChild(senderSpan);
+    container.appendChild(headerRow);
 
-    const copyBtn = document.createElement('button');
-    copyBtn.className = 'copy-msg-btn';
-    copyBtn.title = 'Copy to clipboard';
-    copyBtn.innerHTML = `
-      <svg style="width: 12px; height: 12px;" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path>
-      </svg>
-    `;
-    copyBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      navigator.clipboard.writeText(msg.text).then(() => {
-        copyBtn.innerHTML = `
-          <svg style="width: 12px; height: 12px; color: var(--accent-cyan);" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-          </svg>
-        `;
-        setTimeout(() => {
+    // Floating actions toolbar for assistant messages (revealed on hover via CSS)
+    if (msg.sender === 'assistant') {
+      const toolbar = document.createElement('div');
+      toolbar.className = 'message-actions-toolbar';
+      
+      // 1. Copy button
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'toolbar-action-btn';
+      copyBtn.title = 'Copy response text';
+      copyBtn.innerHTML = `
+        <svg style="width: 13px; height: 13px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path>
+        </svg>
+      `;
+      copyBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        navigator.clipboard.writeText(msg.text).then(() => {
+          showToast("Response text copied to clipboard!");
           copyBtn.innerHTML = `
-            <svg style="width: 12px; height: 12px;" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path>
+            <svg style="width: 13px; height: 13px; color: var(--accent-sky);" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path>
             </svg>
           `;
-        }, 1500);
+          setTimeout(() => {
+            copyBtn.innerHTML = `
+              <svg style="width: 13px; height: 13px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path>
+              </svg>
+            `;
+          }, 1500);
+        });
       });
-    });
-
-    const actionsWrapper = document.createElement('div');
-    actionsWrapper.style.display = 'flex';
-    actionsWrapper.style.alignItems = 'center';
-    actionsWrapper.style.gap = '6px';
-    actionsWrapper.appendChild(copyBtn);
-
-    // If it's an assistant response, add download button next to it
-    if (msg.sender === 'assistant') {
+      toolbar.appendChild(copyBtn);
+      
+      // 2. Speak button
+      const speakBtn = document.createElement('button');
+      speakBtn.className = 'toolbar-action-btn';
+      speakBtn.title = 'Speak response';
+      speakBtn.innerHTML = `
+        <svg style="width: 13px; height: 13px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"></path>
+        </svg>
+      `;
+      speakBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        try {
+          speakBtn.innerHTML = `
+            <svg class="tool-icon-spin" style="width: 11px; height: 11px; display: inline-block; border-color: var(--accent-sky); border-top-color: transparent;" viewBox="0 0 24 24"></svg>
+          `;
+          const speakRes = await fetch(`${BACKEND_URL}/api/voice/speak`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: msg.text })
+          });
+          const speakData = await speakRes.json();
+          if (speakData.status === 'speaking') {
+            showToast("TTS voice generation playing...");
+          } else {
+            showToast("TTS Engine not loaded. Configure Voice presets first.");
+          }
+        } catch (err) {
+          console.error(err);
+          showToast("Failed to request speech output: " + err.message);
+        } finally {
+          setTimeout(() => {
+            speakBtn.innerHTML = `
+              <svg style="width: 13px; height: 13px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"></path>
+              </svg>
+            `;
+          }, 1500);
+        }
+      });
+      toolbar.appendChild(speakBtn);
+      
+      // 3. Download button
       const downloadBtn = document.createElement('button');
-      downloadBtn.className = 'copy-msg-btn';
+      downloadBtn.className = 'toolbar-action-btn';
       downloadBtn.title = 'Download as Markdown (.md)';
       downloadBtn.innerHTML = `
-        <svg style="width: 12px; height: 12px;" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+        <svg style="width: 13px; height: 13px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
         </svg>
       `;
       downloadBtn.addEventListener('click', (e) => {
@@ -473,13 +1176,12 @@ document.addEventListener('DOMContentLoaded', () => {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+        showToast("Markdown download triggered!");
       });
-      actionsWrapper.appendChild(downloadBtn);
+      toolbar.appendChild(downloadBtn);
+      
+      container.appendChild(toolbar);
     }
-
-    headerRow.appendChild(senderSpan);
-    headerRow.appendChild(actionsWrapper);
-    container.appendChild(headerRow);
 
     const textDiv = document.createElement('div');
     textDiv.className = 'message-text';
@@ -487,6 +1189,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Render text block in markdown
     if (typeof marked !== 'undefined') {
       textDiv.innerHTML = marked.parse(msg.text || '');
+      formatCodeBlocks(textDiv);
     } else {
       textDiv.textContent = msg.text;
     }
@@ -494,10 +1197,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (msg.attachments && msg.attachments.length > 0) {
       msg.attachments.forEach(file => {
         if (file.type === 'image') {
-          const img = document.createElement('img');
-          img.src = file.data || msg.image;
-          img.className = 'message-image';
-          container.appendChild(img);
+          const frame = createMediaFrame(file.data || msg.image);
+          container.appendChild(frame);
         } else if (file.type === 'pdf') {
           const pdfBox = document.createElement('div');
           pdfBox.style.display = 'flex';
@@ -519,14 +1220,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       });
     } else if (msg.image) {
-      const img = document.createElement('img');
-      img.src = msg.image;
-      img.className = 'message-image';
-      container.appendChild(img);
+      const frame = createMediaFrame(msg.image);
+      container.appendChild(frame);
     }
     
     container.appendChild(textDiv);
     messageList.appendChild(container);
+    
+    if (msg.sender === 'assistant') {
+      formatTablesAndQuotes(textDiv);
+      if (!isLast) {
+        checkAndSetupCollapse(container, msg.id || container.id);
+      }
+    }
+    
     scrollToBottom();
   }
 
@@ -557,21 +1264,25 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function updateStreamText(msgId, chunk) {
-    const textDiv = document.getElementById(`${msgId}_text`);
+    let textDiv = document.getElementById(`${msgId}_text`);
+    if (!textDiv) {
+      appendStreamPlaceholder(msgId);
+      textDiv = document.getElementById(`${msgId}_text`);
+    }
+    
     if (textDiv) {
       textDiv.classList.remove('typing');
+      textDiv.classList.add('streaming');
       
-      // Store raw accumulated text in a dataset attribute to prevent parsing HTML nodes back as source Markdown
       if (!textDiv.dataset.rawText) {
-        textDiv.dataset.rawText = textDiv.textContent || '';
+        textDiv.dataset.rawText = '';
       }
       textDiv.dataset.rawText += chunk;
       
-      if (typeof marked !== 'undefined') {
-        textDiv.innerHTML = marked.parse(textDiv.dataset.rawText);
-      } else {
-        textDiv.textContent = textDiv.dataset.rawText;
-      }
+      // Update textContent immediately to avoid any Markdown re-parsing flicker during generation.
+      // The blinking caret is rendered natively via CSS pseudo-element.
+      textDiv.textContent = textDiv.dataset.rawText;
+      
       scrollToBottom();
     }
   }
@@ -615,8 +1326,39 @@ document.addEventListener('DOMContentLoaded', () => {
     btnInterrupt.style.display = show ? 'block' : 'none';
   }
 
-  function scrollToBottom() {
-    messageList.scrollTop = messageList.scrollHeight;
+  let isUserScrollingManually = false;
+  let scrollCheckTimeout = null;
+  messageList.addEventListener('scroll', () => {
+    if (!scrollCheckTimeout) {
+      scrollCheckTimeout = requestAnimationFrame(() => {
+        const offset = messageList.scrollHeight - messageList.scrollTop - messageList.clientHeight;
+        isUserScrollingManually = offset > 100;
+        scrollCheckTimeout = null;
+      });
+    }
+  });
+
+  let scrollTimeout = null;
+  function scrollToBottom(force = false) {
+    if (isUserScrollingManually && !force) return;
+    if (scrollTimeout) return;
+    scrollTimeout = requestAnimationFrame(() => {
+      messageList.scrollTop = messageList.scrollHeight;
+      scrollTimeout = null;
+    });
+  }
+
+  function collapseAllPreviousLargeMessages() {
+    const textDivs = document.querySelectorAll('.message-container.assistant .message-text');
+    textDivs.forEach(textDiv => {
+      const container = textDiv.closest('.message-container');
+      if (!container) return;
+
+      const charCount = textDiv.textContent.length;
+      if (charCount > 600) {
+        collapseMessage(container, textDiv);
+      }
+    });
   }
 
   // --- CONNECT SYSTEM EVENTS (SSE) ---
@@ -682,6 +1424,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // 4. Chat states typing indicator
     if (type === 'chat_status' && data.status === 'typing') {
       const targetSessionId = data.session_id || currentSessionId;
+      activeStreams[data.msg_id] = {
+        sessionId: targetSessionId,
+        text: '',
+        tools: []
+      };
       if (targetSessionId === currentSessionId) {
         appendStreamPlaceholder(data.msg_id);
       }
@@ -690,6 +1437,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // 5. Chat chunks streaming tokens
     if (type === 'chat_chunk') {
       const targetSessionId = data.session_id || currentSessionId;
+      if (!activeStreams[data.msg_id]) {
+        activeStreams[data.msg_id] = {
+          sessionId: targetSessionId,
+          text: '',
+          tools: []
+        };
+      }
+      activeStreams[data.msg_id].text += data.text;
       if (targetSessionId === currentSessionId) {
         updateStreamText(data.msg_id, data.text);
       }
@@ -698,10 +1453,27 @@ document.addEventListener('DOMContentLoaded', () => {
     // 6. Tools calls streaming updates
     if (type === 'chat_tool') {
       const targetSessionId = data.session_id || currentSessionId;
-      if (targetSessionId === currentSessionId) {
-        if (data.status === 'start') {
+      if (!activeStreams[data.msg_id]) {
+        activeStreams[data.msg_id] = {
+          sessionId: targetSessionId,
+          text: '',
+          tools: []
+        };
+      }
+      const stream = activeStreams[data.msg_id];
+      if (data.status === 'start') {
+        if (!stream.tools.some(t => t.name === data.tool.name)) {
+          stream.tools.push({ name: data.tool.name, status: 'running' });
+        }
+        if (targetSessionId === currentSessionId) {
           appendToolCard(data.msg_id, data.tool);
-        } else if (data.status === 'end') {
+        }
+      } else if (data.status === 'end') {
+        const tool = stream.tools.find(t => t.name === data.tool.name);
+        if (tool) {
+          tool.status = 'done';
+        }
+        if (targetSessionId === currentSessionId) {
           resolveToolCard(data.msg_id, data.tool);
         }
       }
@@ -710,35 +1482,66 @@ document.addEventListener('DOMContentLoaded', () => {
     // 7. Full completed assistant message
     if (type === 'chat_message' && data.sender === 'assistant') {
       const targetSessionId = data.session_id || currentSessionId;
+      delete activeStreams[data.id];
       const session = sessions.find(s => s.id === targetSessionId);
       if (session) {
         // Remove stream placeholder container and replace with saved DB structure
         const placeholder = document.getElementById(data.id);
         if (placeholder) placeholder.remove();
         
-        const msg = {
-          sender: 'assistant',
-          text: data.text,
-          id: data.id
-        };
-        session.messages.push(msg);
-        localStorage.setItem('adam_sessions', JSON.stringify(sessions));
-        if (targetSessionId === currentSessionId) {
-          appendMessageUI(msg);
+        if (!session.messages.some(m => m.id === data.id)) {
+          const msg = {
+            sender: 'assistant',
+            text: data.text,
+            id: data.id
+          };
+          session.messages.push(msg);
+          localStorage.setItem('adam_sessions', JSON.stringify(sessions));
+          if (targetSessionId === currentSessionId) {
+            appendMessageUI(msg);
+          }
         }
       }
-      showInterruptBtn(false);
+      if (targetSessionId === currentSessionId) {
+        showInterruptBtn(false);
+      }
     }
 
     // 8. Voice loop states
     if (type === 'voice_status') {
-      if (data.status === 'transcribing') {
-        voiceDot.className = 'status-dot typing';
-        voiceStatusText.textContent = 'Transcribing voice...';
-      } else if (data.status === 'idle') {
-        voiceDot.className = 'status-dot active';
-        voiceStatusText.textContent = 'Listening (Voice active)';
+      if (isVoiceInputEnabled) {
+        if (data.status === 'transcribing') {
+          voiceDot.className = 'status-dot typing';
+          voiceStatusText.textContent = 'Transcribing voice...';
+          isTranscribing = true;
+        } else if (data.status === 'idle') {
+          voiceDot.className = 'status-dot active';
+          voiceStatusText.textContent = 'Listening (Voice active)';
+          isTranscribing = false;
+        }
+      } else {
+        voiceDot.className = 'status-dot';
+        voiceStatusText.textContent = 'Voice loop muted';
+        isTranscribing = false;
       }
+      updateWaveformAnimationState();
+    }
+
+    if (type === 'mic_activity') {
+      if (isVoiceInputEnabled && data.active) {
+        isTranscribing = true;
+        updateWaveformAnimationState();
+        if (micActivityTimeout) clearTimeout(micActivityTimeout);
+        micActivityTimeout = setTimeout(() => {
+          isTranscribing = false;
+          updateWaveformAnimationState();
+        }, 800);
+      }
+    }
+
+    if (type === 'playback_status') {
+      isSpeaking = data.active;
+      updateWaveformAnimationState();
     }
 
     // 9. Playback interrupt
@@ -780,6 +1583,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const text = chatTextarea.value.trim();
     if (!text && attachedFiles.length === 0) return;
 
+    collapseAllPreviousLargeMessages();
+    isUserScrollingManually = false;
+
     chatTextarea.value = '';
     chatTextarea.style.height = 'auto'; // Reset height
     chatTextarea.disabled = true;
@@ -795,11 +1601,23 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // Save and render User UI message
-    const session = sessions.find(s => s.id === currentSessionId);
-    if (session) {
-      session.messages.push(userMsg);
-      saveSessions();
+    let session = sessions.find(s => s.id === currentSessionId);
+    if (!session) {
+      if (!currentSessionId) {
+        currentSessionId = `session_${Date.now()}`;
+        localStorage.setItem('adam_active_session_id', currentSessionId);
+      }
+      session = {
+        id: currentSessionId,
+        name: `Session ${sessions.length + 1}`,
+        messages: [],
+        origin: (typeof window.api !== 'undefined') ? 'desktop' : 'remote'
+      };
+      sessions.unshift(session);
+      renderSessions();
     }
+    session.messages.push(userMsg);
+    saveSessions();
     appendMessageUI(userMsg);
 
     // Call API
@@ -885,9 +1703,23 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // --- VOICE AND AUDIO OPTIONS ---
+  let isTranscribing = false;
+  let isSpeaking = false;
+  let micActivityTimeout = null;
+
+  function updateWaveformAnimationState() {
+    const voiceVisualizer = document.getElementById('voice-visualizer');
+    if (!voiceVisualizer) return;
+    if (isSpeaking) {
+      voiceVisualizer.classList.add('active');
+    } else {
+      voiceVisualizer.classList.remove('active');
+    }
+  }
+
   let isVoiceInputEnabled = false;
 
-  btnToggleMic.addEventListener('click', () => {
+  btnToggleMic.addEventListener('click', async () => {
     isVoiceInputEnabled = !isVoiceInputEnabled;
     btnToggleMic.classList.toggle('active', isVoiceInputEnabled);
     if (isVoiceInputEnabled) {
@@ -897,6 +1729,19 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       voiceDot.className = 'status-dot';
       voiceStatusText.textContent = 'Voice loop muted';
+      isTranscribing = false;
+    }
+    updateWaveformAnimationState();
+    
+    // Sync muted state to backend
+    try {
+      await fetch(`${BACKEND_URL}/api/voice/mute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ muted: !isVoiceInputEnabled })
+      });
+    } catch (e) {
+      console.warn("Failed to update mic status on backend:", e);
     }
   });
 
@@ -1079,35 +1924,54 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- SYSTEM LOGS LOGIC ---
   const logVerbosity = document.getElementById('log-verbosity');
   let allLogs = [];
+  let displayedLogs = []; // Cache of the last 250 visible lines for the current filter level
 
   function shouldShowLog(line, level) {
     const lowerLine = line.toLowerCase();
     if (level === 'errors') {
       return lowerLine.includes('[error]') || lowerLine.includes('error') || lowerLine.includes('exception') || lowerLine.includes('fail') || lowerLine.includes('crash') || lowerLine.includes('critical');
-    } else if (level === 'warnings') {
-      return lowerLine.includes('[error]') || lowerLine.includes('error') || lowerLine.includes('exception') || lowerLine.includes('fail') || lowerLine.includes('crash') || lowerLine.includes('critical') || lowerLine.includes('[warning]') || lowerLine.includes('warning') || lowerLine.includes('warn');
+    } else if (level === 'standard') {
+      return lowerLine.includes('[system]') || lowerLine.includes('[tool]') || lowerLine.includes('[error]') || lowerLine.includes('error') || lowerLine.includes('exception') || lowerLine.includes('fail') || lowerLine.includes('crash') || lowerLine.includes('critical');
     }
     return true; // 'all'
   }
 
   function filterAndRenderLogs() {
     const level = logVerbosity.value;
-    consoleLogs.textContent = '';
-    
-    const filtered = allLogs.filter(line => shouldShowLog(line, level));
-    consoleLogs.textContent = filtered.join('\n') + (filtered.length > 0 ? '\n' : '');
+    displayedLogs = allLogs.filter(line => shouldShowLog(line, level)).slice(-250);
+    consoleLogs.textContent = displayedLogs.join('\n') + (displayedLogs.length > 0 ? '\n' : '');
     consoleLogs.scrollTop = consoleLogs.scrollHeight;
   }
 
   logVerbosity.addEventListener('change', filterAndRenderLogs);
 
   function appendLogConsole(line) {
+    // State-level ingestion filters: silence junk and warnings
+    const lowerLine = line.toLowerCase();
+    if (
+      lowerLine.includes("jinja exception: no messages provided") ||
+      lowerLine.includes("tokenizer") ||
+      lowerLine.includes("regex") ||
+      lowerLine.includes("parameter dump") ||
+      (lowerLine.includes("\\n") && lowerLine.includes("nac-"))
+    ) {
+      return; // Ignore
+    }
+
     allLogs.push(line);
+    if (allLogs.length > 2000) {
+      allLogs.shift(); // Prevent memory leaks
+    }
     
     const level = logVerbosity.value;
     if (shouldShowLog(line, level)) {
       const shouldScroll = consoleLogs.scrollTop + consoleLogs.clientHeight >= consoleLogs.scrollHeight - 20;
-      consoleLogs.textContent += line + '\n';
+      
+      displayedLogs.push(line);
+      if (displayedLogs.length > 250) {
+        displayedLogs.shift();
+      }
+      consoleLogs.textContent = displayedLogs.join('\n') + (displayedLogs.length > 0 ? '\n' : '');
       
       if (shouldScroll) {
         consoleLogs.scrollTop = consoleLogs.scrollHeight;
@@ -1117,6 +1981,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   btnClearLogs.addEventListener('click', () => {
     allLogs = [];
+    displayedLogs = [];
     consoleLogs.textContent = '';
   });
 
@@ -1303,21 +2168,22 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- COMPRESS CONTEXT ---
   const btnCompressContext = document.getElementById('btn-compress-context');
   if (btnCompressContext) {
-    btnCompressContext.addEventListener('click', async () => {
+    btnCompressContext.addEventListener('click', async (e) => {
+      if (e && e.currentTarget) e.currentTarget.blur();
       try {
         const res = await fetch(`${BACKEND_URL}/api/chat/compress`, { method: 'POST' });
         if (res.ok) {
           const rdata = await res.json();
-          alert(`Context compressed successfully. Current context length: ${rdata.context_turns} turns.`);
+          showToast(`Context compressed successfully! (${rdata.context_turns} turns)`);
           appendLogConsole(`[SYSTEM] Manual context compression executed. New size: ${rdata.context_turns} turns.`);
+        } else {
+          showToast("Failed to compress context: API Error");
         }
       } catch (e) {
-        alert("Failed to compress context: " + e.message);
+        showToast("Failed to compress context: " + e.message);
       } finally {
-        setTimeout(() => {
-          chatTextarea.disabled = false;
-          chatTextarea.focus();
-        }, 100);
+        chatTextarea.disabled = false;
+        chatTextarea.focus();
       }
     });
   }
@@ -1325,9 +2191,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- CLEAR CHAT ---
   const btnClearChat = document.getElementById('btn-clear-chat');
   if (btnClearChat) {
-    btnClearChat.addEventListener('click', async () => {
+    btnClearChat.addEventListener('click', async (e) => {
+      if (e && e.currentTarget) e.currentTarget.blur();
       try {
-        const confirmClear = confirm("Are you sure you want to clear all messages in this session?");
+        const confirmClear = await showConfirmDialog("Clear Chat?", "Are you sure you want to clear all messages in this session?");
         if (!confirmClear) return;
         
         const session = sessions.find(s => s.id === currentSessionId);
@@ -1336,6 +2203,7 @@ document.addEventListener('DOMContentLoaded', () => {
           saveSessions();
           messageList.innerHTML = '';
           appendLogConsole(`[SYSTEM] Cleared chat messages for session: ${session.name}`);
+          showToast("Chat cleared successfully!");
           
           // Notify backend to clear history of this session
           await fetch(`${BACKEND_URL}/api/session/clear`, {
@@ -1346,11 +2214,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       } catch (e) {
         console.warn("Failed to clear session history on backend:", e);
+        showToast("Failed to clear chat: " + e.message);
       } finally {
-        setTimeout(() => {
-          chatTextarea.disabled = false;
-          chatTextarea.focus();
-        }, 100);
+        chatTextarea.disabled = false;
+        chatTextarea.focus();
       }
     });
   }
@@ -1398,57 +2265,89 @@ document.addEventListener('DOMContentLoaded', () => {
 
       toolsContainer.innerHTML = '';
       
+      // Build Bento layout container styling
+      toolsContainer.style.display = 'grid';
+      toolsContainer.style.gridTemplateColumns = 'repeat(2, 1fr)';
+      toolsContainer.style.gap = '16px';
+
       Object.keys(categories).forEach(cat => {
         const catSection = document.createElement('div');
-        catSection.style.background = 'rgba(255,255,255,0.01)';
-        catSection.style.border = '1px solid var(--border-color)';
-        catSection.style.borderRadius = '8px';
-        catSection.style.padding = '14px';
-        catSection.style.marginBottom = '12px';
+        catSection.className = 'bento-card-premium';
 
         catSection.innerHTML = `
-          <div style="font-size: 11px; font-weight: 600; color: var(--accent-cyan); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 10px;">${cat}</div>
-          <div class="category-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;"></div>
+          <div style="font-size: 11px; font-weight: 700; color: var(--accent-sky); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 16px; position: relative; z-index: 1;">${cat}</div>
+          <div class="category-grid" style="display: flex; flex-direction: column; gap: 12px; position: relative; z-index: 1;"></div>
         `;
 
         const grid = catSection.querySelector('.category-grid');
         categories[cat].forEach(tool => {
           const isChecked = enabledTools[tool.id] !== false; // Default to true if not specified
           const card = document.createElement('div');
-          card.style.background = 'rgba(255,255,255,0.02)';
-          card.style.border = '1px solid rgba(255,255,255,0.04)';
-          card.style.borderRadius = '6px';
-          card.style.padding = '8px 12px';
+          card.style.background = 'rgba(255, 255, 255, 0.015)';
+          card.style.border = '1px solid rgba(255, 255, 255, 0.03)';
+          card.style.borderRadius = '8px';
+          card.style.padding = '12px 14px';
           card.style.display = 'flex';
           card.style.alignItems = 'flex-start';
-          card.style.gap = '10px';
+          card.style.justifyContent = 'space-between';
+          card.style.gap = '12px';
 
           card.innerHTML = `
-            <input type="checkbox" class="tool-checkbox" data-tool-id="${tool.id}" ${isChecked ? 'checked' : ''} style="margin-top: 3px; accent-color: var(--accent-cyan); width: 16px; height: 16px; cursor: pointer;">
-            <div style="display: flex; flex-direction: column; gap: 2px;">
-              <span style="font-size: 12px; font-weight: 600; color: var(--text-main);">${tool.name}</span>
-              <span style="font-size: 10px; color: var(--text-dim); line-height: 1.3;">${tool.desc}</span>
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+              <span style="font-size: 12.5px; font-weight: 600; color: var(--text-main);">${tool.name}</span>
+              <span style="font-size: 10.5px; color: var(--text-dim); line-height: 1.4; max-width: 180px;">${tool.desc}</span>
+              <div>
+                <span class="badge-status ${isChecked ? 'active' : 'standby'}">${isChecked ? 'Active' : 'Standby'}</span>
+              </div>
             </div>
+            <button class="switch-premium ${isChecked ? 'checked' : ''}" data-tool-id="${tool.id}" role="switch" aria-checked="${isChecked}">
+              <span class="switch-thumb"></span>
+            </button>
           `;
 
-          const cb = card.querySelector('.tool-checkbox');
-          cb.addEventListener('change', () => saveToolsState());
+          const btn = card.querySelector('.switch-premium');
+          const badge = card.querySelector('.badge-status');
+          btn.addEventListener('click', () => {
+            const checked = btn.classList.toggle('checked');
+            btn.setAttribute('aria-checked', checked);
+            if (checked) {
+              badge.className = 'badge-status active';
+              badge.textContent = 'Active';
+            } else {
+              badge.className = 'badge-status standby';
+              badge.textContent = 'Standby';
+            }
+            saveToolsState();
+          });
           
           grid.appendChild(card);
         });
 
         toolsContainer.appendChild(catSection);
       });
+
+      // Initialize SpotlightCard shimmer hover listeners
+      const bentoCards = toolsContainer.querySelectorAll('.bento-card-premium');
+      bentoCards.forEach(card => {
+        card.addEventListener('mousemove', (e) => {
+          const rect = card.getBoundingClientRect();
+          const x = e.clientX - rect.left;
+          const y = e.clientY - rect.top;
+          card.style.setProperty('--mouse-x', `${x}px`);
+          card.style.setProperty('--mouse-y', `${y}px`);
+        });
+      });
+
     } catch (e) {
       console.error("Failed to load tools config:", e);
     }
   }
 
   async function saveToolsState() {
-    const checkboxes = document.querySelectorAll('.tool-checkbox');
+    const switches = document.querySelectorAll('.switch-premium');
     const enabled_tools = {};
-    checkboxes.forEach(cb => {
-      enabled_tools[cb.dataset.toolId] = cb.checked;
+    switches.forEach(sw => {
+      enabled_tools[sw.dataset.toolId] = sw.classList.contains('checked');
     });
 
     try {
@@ -1484,6 +2383,40 @@ document.addEventListener('DOMContentLoaded', () => {
       if (response.ok) {
         const data = await response.json();
         currentSpeaker = data.model.tts_speaker || 'Aiden';
+        
+        // Sync voice status state with backend configurations on startup
+        if (data.model.stt_enabled) {
+          isVoiceInputEnabled = true;
+          if (btnToggleMic) btnToggleMic.classList.add('active');
+          if (voiceDot) voiceDot.className = 'status-dot active';
+          if (voiceStatusText) voiceStatusText.textContent = 'Listening (Voice active)';
+          
+          try {
+            await fetch(`${BACKEND_URL}/api/voice/mute`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ muted: false })
+            });
+          } catch (e) {
+            console.warn("Failed to unmute mic on backend startup:", e);
+          }
+        } else {
+          isVoiceInputEnabled = false;
+          if (btnToggleMic) btnToggleMic.classList.remove('active');
+          if (voiceDot) voiceDot.className = 'status-dot';
+          if (voiceStatusText) voiceStatusText.textContent = 'Voice inactive';
+          
+          try {
+            await fetch(`${BACKEND_URL}/api/voice/mute`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ muted: true })
+            });
+          } catch (e) {
+            console.warn("Failed to mute mic on backend startup:", e);
+          }
+        }
+        updateWaveformAnimationState();
       }
 
       voiceGrid.innerHTML = '';
@@ -1629,7 +2562,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!shareService) return;
     const service = shareService.value;
     
-    if (service === 'localhostrun') {
+    if (service === 'localhostrun' || service === 'cloudflared') {
       if (ngrokTokenGroup) ngrokTokenGroup.style.display = 'none';
       if (ngrokDomainGroup) ngrokDomainGroup.style.display = 'none';
     } else if (service === 'ngrok') {
@@ -1646,7 +2579,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!isElectron) return;
     try {
       const config = await window.api.getSharingConfig();
-      if (shareService) shareService.value = config.service || 'ngrok';
+      if (shareService) {
+        let val = config.service || 'ngrok';
+        if (val === 'localhostrun') val = 'cloudflared';
+        shareService.value = val;
+      }
       if (shareNgrokToken) shareNgrokToken.value = config.ngrok_token || '';
       if (shareNgrokDomain) shareNgrokDomain.value = config.ngrok_domain || '';
       if (shareAutostart) shareAutostart.checked = config.autostart || false;
@@ -1705,7 +2642,7 @@ document.addEventListener('DOMContentLoaded', () => {
           shareQrImage.style.display = 'block';
         };
       }
-    } else if (status === 'starting') {
+    } else if (status === 'starting' || status === 'handshaking') {
       shareStatusDot.className = 'status-dot typing';
       shareStatusDot.style.background = '#f59e0b'; // Amber
       shareStatusText.textContent = error || 'Starting Tunnel...';
@@ -1826,16 +2763,78 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
-    if (btnCopyShareUrl && shareUrlInput) {
-      btnCopyShareUrl.addEventListener('click', () => {
-        navigator.clipboard.writeText(shareUrlInput.value).then(() => {
-          btnCopyShareUrl.textContent = "Copied!";
-          setTimeout(() => {
-            btnCopyShareUrl.textContent = "Copy";
-          }, 1500);
-        });
+  function showConfirmDialog(title, text) {
+    return new Promise((resolve) => {
+      const modal = document.getElementById('confirm-modal');
+      const titleEl = document.getElementById('confirm-modal-title');
+      const textEl = document.getElementById('confirm-modal-text');
+      const btnCancel = document.getElementById('btn-confirm-cancel');
+      const btnProceed = document.getElementById('btn-confirm-proceed');
+      
+      if (!modal || !titleEl || !textEl || !btnCancel || !btnProceed) {
+        resolve(confirm(text));
+        return;
+      }
+      
+      titleEl.textContent = title;
+      textEl.textContent = text;
+      modal.style.display = 'flex';
+      
+      const onCancel = () => {
+        cleanup();
+        resolve(false);
+      };
+      
+      const onProceed = () => {
+        cleanup();
+        resolve(true);
+      };
+      
+      const cleanup = () => {
+        btnCancel.removeEventListener('click', onCancel);
+        btnProceed.removeEventListener('click', onProceed);
+        modal.style.display = 'none';
+      };
+      
+      btnCancel.addEventListener('click', onCancel);
+      btnProceed.addEventListener('click', onProceed);
+    });
+  }
+
+  function showToast(message) {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+    
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.innerHTML = `
+      <svg style="width: 14px; height: 14px;" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+      </svg>
+      <span>${message}</span>
+    `;
+    
+    container.appendChild(toast);
+    
+    setTimeout(() => {
+      toast.classList.add('show');
+    }, 10);
+    
+    setTimeout(() => {
+      toast.classList.remove('show');
+      setTimeout(() => {
+        toast.remove();
+      }, 300);
+    }, 3000);
+  }
+
+  if (btnCopyShareUrl && shareUrlInput) {
+    btnCopyShareUrl.addEventListener('click', () => {
+      navigator.clipboard.writeText(shareUrlInput.value).then(() => {
+        showToast("Web Sharing URL copied to clipboard!");
       });
-    }
+    });
+  }
 
     let sharingPollInterval = null;
     function startSharingPolling() {
@@ -1953,8 +2952,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnFileRoot = document.getElementById('btn-file-root');
     if (btnFileRoot) {
       btnFileRoot.addEventListener('click', () => {
-        document.getElementById('explorer-path-input').value = '';
-        remoteCurrentPath = '';
+        setExplorerPath('');
         loadExplorerRoot();
       });
     }
@@ -2046,10 +3044,17 @@ document.addEventListener('DOMContentLoaded', () => {
     loading.style.display = 'flex';
     img.classList.add('loading');
     
+    const startTime = Date.now();
     img.onload = () => {
+      const loadTime = Date.now() - startTime;
       loading.style.display = 'none';
       img.classList.remove('loading');
       repositionMarkers();
+      
+      const tel = document.getElementById('screen-telemetry-text');
+      if (tel) {
+        tel.textContent = `Host Desktop (${img.naturalWidth}x${img.naturalHeight} @ ${loadTime}ms)`;
+      }
     };
     
     img.onerror = () => {
@@ -2131,6 +3136,67 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function updateBreadcrumbs(path) {
+    const breadcrumbs = document.getElementById('explorer-breadcrumbs');
+    if (!breadcrumbs) return;
+    breadcrumbs.innerHTML = '';
+    
+    const rootItem = document.createElement('span');
+    rootItem.className = 'breadcrumb-item';
+    rootItem.textContent = 'Computer';
+    rootItem.addEventListener('click', () => {
+      loadExplorerRoot();
+    });
+    breadcrumbs.appendChild(rootItem);
+    
+    if (!path) return;
+    
+    let separator = '/';
+    let parts = [];
+    if (path.includes('\\')) {
+      separator = '\\';
+      parts = path.split('\\').filter(Boolean);
+    } else {
+      parts = path.split('/').filter(Boolean);
+    }
+    
+    let currentAccumulated = '';
+    parts.forEach((part, index) => {
+      const divider = document.createElement('span');
+      divider.className = 'breadcrumb-divider';
+      divider.textContent = '›';
+      breadcrumbs.appendChild(divider);
+      
+      if (separator === '\\') {
+        if (index === 0) {
+          currentAccumulated = part + '\\';
+        } else {
+          currentAccumulated += (currentAccumulated.endsWith('\\') ? '' : '\\') + part;
+        }
+      } else {
+        currentAccumulated += '/' + part;
+      }
+      
+      const item = document.createElement('span');
+      item.className = 'breadcrumb-item';
+      item.textContent = part;
+      
+      const targetPath = currentAccumulated;
+      item.addEventListener('click', () => {
+        loadExplorerPath(targetPath);
+      });
+      
+      breadcrumbs.appendChild(item);
+    });
+  }
+
+  function setExplorerPath(path) {
+    remoteCurrentPath = path;
+    const pathInput = document.getElementById('explorer-path-input');
+    if (pathInput) pathInput.value = path;
+    updateBreadcrumbs(path);
+  }
+
   async function loadExplorerDesktop() {
     const tree = document.getElementById('explorer-tree');
     if (!tree) return;
@@ -2141,8 +3207,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const pathData = await pathRes.json();
       const desktopPath = pathData.desktop_path;
       
-      document.getElementById('explorer-path-input').value = desktopPath;
-      remoteCurrentPath = desktopPath;
+      setExplorerPath(desktopPath);
       
       const res = await fetch(`${BACKEND_URL}/api/remote-control/files/list?path=${encodeURIComponent(desktopPath)}`);
       const data = await res.json();
@@ -2174,8 +3239,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await res.json();
       tree.innerHTML = '';
       
-      document.getElementById('explorer-path-input').value = path;
-      remoteCurrentPath = path;
+      setExplorerPath(path);
       
       if (data.items && data.items.length > 0) {
         data.items.forEach(item => {
@@ -2229,10 +3293,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const toggle = document.createElement('span');
     toggle.className = 'tree-toggle';
     if (isDir) {
-      toggle.textContent = '▶';
+      toggle.innerHTML = `<svg style="width: 8px; height: 8px; transition: transform 0.2s;" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"></path></svg>`;
     } else {
       toggle.style.opacity = '0';
-      toggle.textContent = '';
     }
     header.appendChild(toggle);
     
@@ -2269,7 +3332,11 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const icon = document.createElement('span');
     icon.className = 'tree-icon';
-    icon.textContent = isDir ? '📁' : '📄';
+    if (isDir) {
+      icon.innerHTML = `<svg style="width: 14px; height: 14px; color: var(--accent-indigo); display: block;" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"></path></svg>`;
+    } else {
+      icon.innerHTML = `<svg style="width: 14px; height: 14px; color: var(--text-muted); display: block;" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"></path></svg>`;
+    }
     header.appendChild(icon);
     
     const label = document.createElement('span');
@@ -2321,8 +3388,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const toggle = nodeEl.querySelector('.tree-toggle');
     const isExpanded = childrenContainer.style.display === 'block';
     
-    document.getElementById('explorer-path-input').value = path;
-    remoteCurrentPath = path;
+    setExplorerPath(path);
     
     document.querySelectorAll('.tree-node').forEach(n => n.classList.remove('active'));
     nodeEl.classList.add('active');
@@ -2400,11 +3466,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     if (!parentPath || parentPath === '/' || parentPath === '') {
       loadExplorerRoot();
-      document.getElementById('explorer-path-input').value = '';
-      remoteCurrentPath = '';
+      setExplorerPath('');
     } else {
-      document.getElementById('explorer-path-input').value = parentPath;
-      remoteCurrentPath = parentPath;
+      setExplorerPath(parentPath);
       
       const nodeEl = document.querySelector(`.tree-node[data-path="${parentPath.replace(/\\/g, '\\\\')}"]`);
       if (nodeEl) {
@@ -2497,7 +3561,39 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function initAnimatedGridPattern() {
+    const container = document.getElementById('animated-grid-cells');
+    if (!container) return;
+    
+    const cellSize = 30;
+    const numCells = 50;
+    
+    container.innerHTML = '';
+    
+    for (let i = 0; i < numCells; i++) {
+      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      
+      const col = Math.floor(Math.random() * 70);
+      const row = Math.floor(Math.random() * 45);
+      
+      rect.setAttribute('x', col * cellSize);
+      rect.setAttribute('y', row * cellSize);
+      rect.setAttribute('width', cellSize - 1);
+      rect.setAttribute('height', cellSize - 1);
+      rect.className.baseVal = 'grid-cell-animated';
+      
+      const duration = 4 + Math.random() * 6;
+      const delay = Math.random() * 8;
+      
+      rect.style.animationDuration = `${duration}s`;
+      rect.style.animationDelay = `-${delay}s`;
+      
+      container.appendChild(rect);
+    }
+  }
+
   // --- INITIALIZATION ---
+  initAnimatedGridPattern();
   renderSessions();
   if (sessions.length > 0 && currentSessionId) {
     selectSession(currentSessionId);

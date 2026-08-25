@@ -12,250 +12,371 @@
     }
     body {
       padding: 0;
-      background-color: var(--bg-darker);
-      border-radius: 28px;
-      border: 1px solid var(--border-color);
+      background-color: var(--bg-base);
+      border-radius: 16px;
+      border: 1px solid var(--border-translucent);
       overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      box-sizing: border-box;
     }
 
     .titlebar {
-      border-top-left-radius: 28px;
-      border-top-right-radius: 28px;
+      border-top-left-radius: 16px;
+      border-top-right-radius: 16px;
+      flex-shrink: 0;
     }
 
     .window-content {
-      padding: 24px 40px;
       flex: 1;
       display: flex;
       flex-direction: column;
-      height: calc(100vh - 38px);
       align-items: center;
       justify-content: center;
-      border-bottom-left-radius: 28px;
-      border-bottom-right-radius: 28px;
+      border-bottom-left-radius: 16px;
+      border-bottom-right-radius: 16px;
+      overflow: hidden;
+      padding: 16px 20px;
+      box-sizing: border-box;
     }
 
-    .status-title {
-      font-size: 20px;
-      font-weight: 700;
-      margin-bottom: 20px;
-      text-align: center;
-      letter-spacing: 0.5px;
-      background: var(--accent-grad);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
+    /* Refined Glassmorphic Card Frame with Top Light Bevel */
+    .setup-card {
+      background: rgba(15, 17, 23, 0.8) !important;
+      backdrop-filter: blur(32px) !important;
+      -webkit-backdrop-filter: blur(32px) !important;
+      border: 1px solid rgba(255, 255, 255, 0.06) !important;
+      border-top: 1px solid rgba(255, 255, 255, 0.14) !important; /* Top Light Bevel */
+      border-radius: 16px;
+      padding: 24px 36px;
+      width: 100%;
+      max-width: 450px;
+      max-height: calc(100vh - 60px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      box-shadow: 0 20px 60px -15px rgba(0, 0, 0, 0.7), 0 0 40px rgba(56, 189, 248, 0.08) !important;
+      transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      box-sizing: border-box;
+      overflow: hidden;
     }
 
-    /* Core Pulsing Orb Animation */
+    .setup-card.glowing {
+      border-color: rgba(99, 102, 241, 0.2) !important;
+      box-shadow: 0 20px 60px -15px rgba(0, 0, 0, 0.7), 0 0 40px rgba(99, 102, 241, 0.12) !important;
+    }
+
+    .setup-card.errored {
+      border-color: rgba(239, 68, 68, 0.25) !important;
+      box-shadow: 0 20px 60px -15px rgba(0, 0, 0, 0.7), 0 0 40px rgba(239, 68, 68, 0.12) !important;
+    }
+
+    /* Central Neural Core / Orb Visualizer (Magic UI / Aceternity inspired) */
     .neural-core-container {
       position: relative;
-      width: 80px;
-      height: 80px;
-      margin-bottom: 18px;
+      width: 96px;
+      height: 96px;
+      margin-bottom: 14px;
       display: flex;
       align-items: center;
       justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .ambient-glow {
+      position: absolute;
+      width: 80px;
+      height: 80px;
+      background: rgba(56, 189, 248, 0.12);
+      filter: blur(24px);
+      -webkit-filter: blur(24px);
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .core-frosted-sphere {
+      position: relative;
+      width: 46px;
+      height: 46px;
+      background: linear-gradient(135deg, #6366f1 0%, #38bdf8 50%, #10b981 100%);
+      border-radius: 50%;
+      z-index: 3;
+      box-shadow: 0 0 28px rgba(56, 189, 248, 0.45), inset 0 1px 2px rgba(255, 255, 255, 0.25);
+      animation: core-breathe 3s infinite ease-in-out;
+      will-change: transform, opacity;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .core-inner-glow {
+      width: 80%;
+      height: 80%;
+      background: rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      border-radius: 50%;
     }
 
     .core-orbit-outer {
       position: absolute;
-      width: 74px;
-      height: 74px;
-      border: 1px dashed rgba(0, 195, 255, 0.4);
+      width: 84px;
+      height: 84px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
       border-radius: 50%;
-      animation: rotate-clockwise 16s linear infinite;
+      animation: rotate-clockwise 10s linear infinite;
+      z-index: 1;
+      will-change: transform;
     }
 
     .core-orbit-inner {
       position: absolute;
-      width: 52px;
-      height: 52px;
-      border: 1px dotted rgba(0, 102, 255, 0.5);
+      width: 66px;
+      height: 66px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
       border-radius: 50%;
-      animation: rotate-counter 10s linear infinite;
-    }
-
-    .core-pulse-glow {
-      position: absolute;
-      width: 36px;
-      height: 36px;
-      background: rgba(0, 195, 255, 0.12);
-      border-radius: 50%;
-      filter: blur(8px);
-      animation: glow-pulse 3s infinite ease-in-out;
-    }
-
-    .core-pulse {
-      width: 26px;
-      height: 26px;
-      background: radial-gradient(circle, var(--accent-cyan) 0%, var(--accent-blue) 100%);
-      border-radius: 50%;
-      box-shadow: 0 0 16px rgba(0, 195, 255, 0.7), 0 0 30px rgba(0, 102, 255, 0.3);
-      animation: core-breathe 2s infinite ease-in-out;
-      transition: all 0.5s ease;
+      animation: rotate-counter 7s linear infinite;
       z-index: 2;
+      will-change: transform;
     }
 
-    .core-particles {
+    .satellite {
       position: absolute;
-      width: 100%;
-      height: 100%;
-      animation: rotate-clockwise 12s linear infinite;
-    }
-
-    .particle {
-      position: absolute;
-      width: 4px;
-      height: 4px;
-      background: var(--accent-cyan);
+      width: 4.5px;
+      height: 4.5px;
       border-radius: 50%;
-      box-shadow: 0 0 6px var(--accent-cyan);
+    }
+    
+    .satellite.sat1 {
+      top: -2.5px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--accent-sky);
+      box-shadow: 0 0 8px var(--accent-sky);
     }
 
-    .particle.p1 { top: 12px; left: 50%; transform: translateX(-50%); }
-    .particle.p2 { bottom: 12px; left: 50%; transform: translateX(-50%); }
-    .particle.p3 { left: 12px; top: 50%; transform: translateY(-50%); }
-    .particle.p4 { right: 12px; top: 50%; transform: translateY(-50%); }
+    .satellite.sat2 {
+      bottom: -2.5px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--accent-emerald);
+      box-shadow: 0 0 8px var(--accent-emerald);
+    }
 
     @keyframes rotate-clockwise {
-      100% { transform: rotate(360deg); }
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
     }
 
     @keyframes rotate-counter {
-      100% { transform: rotate(-360deg); }
-    }
-
-    @keyframes glow-pulse {
-      0%, 100% { opacity: 0.5; transform: scale(0.9); }
-      50% { opacity: 1.0; transform: scale(1.1); }
+      from { transform: rotate(0deg); }
+      to { transform: rotate(-360deg); }
     }
 
     @keyframes core-breathe {
-      0%, 100% { transform: scale(0.95); opacity: 0.9; box-shadow: 0 0 14px rgba(0, 195, 255, 0.6); }
-      50% { transform: scale(1.1); opacity: 1.0; box-shadow: 0 0 24px rgba(0, 195, 255, 0.9), 0 0 12px rgba(0, 102, 255, 0.5); }
+      0%, 100% { transform: scale(0.96); opacity: 0.9; }
+      50% { transform: scale(1.04); opacity: 1; }
     }
 
-    /* Steps checklist with connecting timeline */
+    .status-title {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 4px;
+      text-align: center;
+      letter-spacing: 0.5px;
+      background: linear-gradient(135deg, #fff 0%, #a1a1aa 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+      will-change: transform, opacity;
+      flex-shrink: 0;
+    }
+
+    .status-title.updating {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+
+    .telemetry-subtext {
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      color: var(--text-dim);
+      margin-bottom: 16px;
+      text-align: center;
+      letter-spacing: 0.5px;
+      opacity: 0.8;
+      height: 14px;
+      transition: opacity 0.2s ease;
+      flex-shrink: 0;
+    }
+
+    /* Stepper Timeline checklist with Pixel-Aligned Absolute Geometry */
     .steps-list {
       display: flex;
       flex-direction: column;
-      gap: 12px;
       width: 100%;
-      max-width: 440px;
-      margin-bottom: 20px;
+      max-width: 400px;
+      margin-bottom: 18px;
       position: relative;
-    }
-
-    .timeline-track {
-      position: absolute;
-      top: 10px;
-      bottom: 10px;
-      left: 9px;
-      width: 2px;
-      background: rgba(255, 255, 255, 0.04);
-      z-index: 0;
-      border-radius: 1px;
-      overflow: hidden;
-    }
-
-    .timeline-fill {
-      width: 100%;
-      height: 0%;
-      background: linear-gradient(to bottom, var(--success), #00ffaa);
-      box-shadow: 0 0 8px var(--success);
-      transition: height 0.4s ease;
+      flex: 1;
+      overflow-y: auto;
+      padding-left: 16px;
+      padding-right: 16px;
+      box-sizing: border-box;
     }
 
     .step-item {
       display: flex;
       align-items: center;
-      gap: 14px;
-      font-size: 13px;
+      gap: 16px;
+      font-size: 12.5px;
       color: var(--text-dim);
       font-weight: 500;
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      height: 34px;
+      transition: all 0.2s ease;
     }
 
-    .step-item.active {
-      color: var(--text-main);
-      text-shadow: 0 0 8px rgba(0, 195, 255, 0.3);
-    }
-
-    .step-item.completed {
-      color: var(--success);
-    }
-
-    .step-item.failed {
-      color: var(--danger);
-    }
-
-    .step-icon {
-      width: 20px;
-      height: 20px;
+    .step-node-wrapper {
+      position: relative;
+      width: 24px;
+      height: 100%;
       display: flex;
       align-items: center;
       justify-content: center;
-      border-radius: 50%;
-      border: 1.5px solid var(--text-dim);
-      font-size: 11px;
-      font-weight: bold;
-      transition: all 0.3s ease;
-      background: var(--bg-darker);
-      position: relative;
-      z-index: 2;
       flex-shrink: 0;
     }
 
-    .step-item.active .step-icon {
-      border-color: var(--accent-cyan);
-      box-shadow: 0 0 10px rgba(0, 195, 255, 0.4);
-      animation: spin 1.2s linear infinite;
-      border-top-color: transparent;
-      background: var(--bg-darker);
+    .step-circle {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background-color: #131620; /* Solid background matching card prevents line bleed-through */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-sans);
+      font-size: 9.5px;
+      font-weight: 500;
+      color: rgba(255, 255, 255, 0.3);
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      z-index: 2;
     }
 
-    .step-item.completed .step-icon {
-      border-color: var(--success);
-      background-color: var(--bg-darker);
-      color: var(--success);
+    .step-connector {
+      position: absolute;
+      width: 2px;
+      top: 27px; /* Starts exactly at bottom of circle: (34px/2) + 10px = 27px */
+      bottom: -7px; /* Ends exactly at top of next circle: 34px + 17px - 10px = 41px, bottom edge is -7px */
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255, 255, 255, 0.06);
+      z-index: 1;
     }
 
-    .step-item.completed .step-icon::before {
-      content: '✓';
+    .step-connector-fill {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 0%;
+      background: #10b981;
+      box-shadow: 0 0 6px rgba(16, 185, 129, 0.5);
+      transition: height 0.1s linear, background-color 0.2s;
     }
 
-    .step-item.failed .step-icon {
+    /* Completed state - crisp full-sized emerald circular icon */
+    .step-item.completed {
+      color: #34d399;
+    }
+    .step-item.completed .step-circle {
+      border-color: rgba(16, 185, 129, 0.8);
+      background-color: rgba(6, 78, 59, 0.5);
+      color: #34d399;
+      box-shadow: 0 0 8px rgba(16, 185, 129, 0.25);
+      font-size: 0; /* Hides index number */
+    }
+    .step-item.completed .step-circle::after {
+      content: '';
+      display: block;
+      width: 7px;
+      height: 4px;
+      border-left: 1.5px solid currentColor;
+      border-bottom: 1.5px solid currentColor;
+      transform: rotate(-45deg) translate(0.5px, -0.5px);
+    }
+
+    /* Active state - animated concentric ring */
+    .step-item.active {
+      color: #ffffff;
+      font-weight: 600;
+    }
+    .step-item.active .step-circle {
+      border-color: rgba(56, 189, 248, 0.8);
+      background-color: rgba(14, 165, 233, 0.2);
+      color: #7dd3fc;
+      box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.35);
+      animation: pulse-ring 1.5s infinite cubic-bezier(0.16, 1, 0.3, 1);
+      font-size: 0; /* Hides index number */
+    }
+    .step-item.active .step-circle::after {
+      content: '';
+      width: 6px;
+      height: 6px;
+      background: #7dd3fc;
+      border-radius: 50%;
+      box-shadow: 0 0 6px #7dd3fc;
+    }
+
+    /* Failed state */
+    .step-item.failed {
+      color: var(--danger);
+    }
+    .step-item.failed .step-circle {
       border-color: var(--danger);
-      background-color: var(--bg-darker);
+      background-color: rgba(239, 68, 68, 0.1);
+      color: var(--danger);
+      font-size: 0; /* Hides index number */
+    }
+    .step-item.failed .step-circle::after {
+      content: '×';
+      display: block;
+      font-size: 13px;
+      font-weight: 700;
       color: var(--danger);
     }
 
-    .step-item.failed .step-icon::before {
-      content: '×';
+    @keyframes pulse-ring {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.06); }
     }
 
-    /* Progress Bar */
+    /* Slim Progress Bar track */
     .progress-container {
       width: 100%;
-      max-width: 440px;
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid var(--border-color);
-      height: 8px;
-      border-radius: 4px;
+      max-width: 400px;
+      background: #090a0f;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      height: 5px;
+      border-radius: 9999px;
       margin-bottom: 20px;
       overflow: hidden;
       position: relative;
-      box-shadow: var(--shadow-glow);
+      flex-shrink: 0;
     }
 
     .progress-bar {
       width: 0%;
       height: 100%;
-      background: var(--accent-grad);
-      border-radius: 4px;
-      transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-      box-shadow: 0 0 8px rgba(0, 195, 255, 0.6);
+      background: linear-gradient(90deg, #6366f1 0%, #38bdf8 50%, #10b981 100%);
+      border-radius: 9999px;
+      transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
       position: relative;
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
+      will-change: width;
     }
 
     .progress-bar::after {
@@ -268,10 +389,10 @@
       background: linear-gradient(
         90deg,
         rgba(255, 255, 255, 0) 0%,
-        rgba(255, 255, 255, 0.25) 50%,
+        rgba(255, 255, 255, 0.12) 50%,
         rgba(255, 255, 255, 0) 100%
       );
-      animation: progress-shimmer 1.5s infinite linear;
+      animation: progress-shimmer 2s infinite linear;
     }
 
     @keyframes progress-shimmer {
@@ -280,24 +401,25 @@
     }
 
     .error-card {
-      background: rgba(239, 68, 68, 0.08);
-      border: 1px solid rgba(239, 68, 68, 0.25);
-      border-radius: 8px;
-      padding: 14px 18px;
+      background: rgba(239, 68, 68, 0.05);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+      border-radius: 10px;
+      padding: 12px 16px;
       width: 100%;
-      max-width: 440px;
-      max-height: 140px;
+      max-width: 400px;
+      max-height: 100px;
       overflow-y: auto;
       text-align: left;
       margin-bottom: 20px;
       display: none;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      flex-shrink: 0;
     }
 
     .error-card h3 {
       color: var(--danger);
-      font-size: 13px;
-      margin-bottom: 6px;
+      font-size: 12.5px;
+      margin-bottom: 4px;
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.5px;
@@ -305,7 +427,7 @@
 
     .error-card p {
       color: #fca5a5;
-      font-size: 12px;
+      font-size: 11.5px;
       font-family: var(--font-mono);
       white-space: pre-wrap;
       line-height: 1.4;
@@ -314,39 +436,34 @@
     .controls-row {
       display: flex;
       gap: 16px;
+      flex-shrink: 0;
     }
 
-    /* Card background breathing glow */
-    .setup-card {
-      background: rgba(10, 18, 42, 0.4);
-      backdrop-filter: blur(20px);
-      border: 1px solid var(--border-color);
-      border-radius: 12px;
-      padding: 24px;
-      width: 100%;
-      max-width: 500px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      box-shadow: var(--shadow-glow);
-      transition: border-color 0.5s ease, box-shadow 0.5s ease;
+    /* Tactile glass action buttons */
+    .btn-tactile-glass {
+      background: rgba(255, 255, 255, 0.03) !important;
+      border: 1px solid rgba(255, 255, 255, 0.08) !important;
+      color: var(--text-muted) !important;
+      border-top-color: rgba(255, 255, 255, 0.16) !important;
+      border-radius: 10px !important;
+      padding: 9px 18px !important;
+      font-size: 12px !important;
+      font-weight: 600 !important;
+      letter-spacing: 0.5px !important;
+      cursor: pointer !important;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+      outline: none !important;
     }
-
-    .setup-card.glowing {
-      border-color: rgba(0, 195, 255, 0.4);
-      box-shadow: 0 0 25px rgba(0, 195, 255, 0.15), var(--shadow-glow);
+    .btn-tactile-glass:hover {
+      background: rgba(255, 255, 255, 0.06) !important;
+      border-color: rgba(255, 255, 255, 0.15) !important;
+      color: var(--text-main) !important;
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25) !important;
     }
-
-    .setup-card.errored {
-      border-color: rgba(239, 68, 68, 0.4);
-      box-shadow: 0 0 25px rgba(239, 68, 68, 0.15), 0 0 15px rgba(239, 68, 68, 0.1);
-    }
-
-    #btn-back:hover {
-      background: rgba(0, 195, 255, 0.12) !important;
-      border-color: rgba(0, 195, 255, 0.5) !important;
-      box-shadow: 0 0 12px rgba(0, 195, 255, 0.3) !important;
-      color: #fff !important;
+    .btn-tactile-glass:active {
+      transform: scale(0.97) !important;
+      background: rgba(255, 255, 255, 0.02) !important;
     }
   </style>
 </head>
@@ -369,57 +486,103 @@
     <div class="window-content">
       <div id="glow-container" class="setup-card glowing">
         
-        <!-- Neural Core Animation -->
+        <!-- Cinematic Neural Core Visualizer -->
         <div class="neural-core-container">
-          <div class="core-orbit-outer"></div>
-          <div class="core-orbit-inner"></div>
-          <div class="core-pulse-glow"></div>
-          <div class="core-pulse" id="core-pulse-orb"></div>
-          <div class="core-particles">
-            <div class="particle p1"></div>
-            <div class="particle p2"></div>
-            <div class="particle p3"></div>
-            <div class="particle p4"></div>
+          <div class="ambient-glow"></div>
+          <div class="core-orbit-outer">
+            <div class="satellite sat1"></div>
+          </div>
+          <div class="core-orbit-inner">
+            <div class="satellite sat2"></div>
+          </div>
+          <div class="core-frosted-sphere">
+            <div class="core-inner-glow"></div>
           </div>
         </div>
 
         <div class="status-title" id="status-title">Configuring Workspace...</div>
+        <div class="telemetry-subtext" id="telemetry-subtext">Initializing systems...</div>
         
-        <!-- Steps checklists -->
+        <!-- Modular Stepper Timeline checklist -->
         <div class="steps-list" id="steps-list">
-          <div class="timeline-track">
-            <div class="timeline-fill" id="timeline-fill"></div>
-          </div>
+          
           <div class="step-item" id="step-0">
-            <div class="step-icon"></div>
+            <div class="step-node-wrapper">
+              <div class="step-circle">1</div>
+              <div class="step-connector">
+                <div class="step-connector-fill" id="fill-0"></div>
+              </div>
+            </div>
             <span>Terminating lingering engine instances</span>
           </div>
+          
           <div class="step-item" id="step-1">
-            <div class="step-icon"></div>
+            <div class="step-node-wrapper">
+              <div class="step-circle">2</div>
+              <div class="step-connector">
+                <div class="step-connector-fill" id="fill-1"></div>
+              </div>
+            </div>
             <span>Mapping parameters and offloading layers</span>
           </div>
+          
           <div class="step-item" id="step-2">
-            <div class="step-icon"></div>
+            <div class="step-node-wrapper">
+              <div class="step-circle">3</div>
+              <div class="step-connector">
+                <div class="step-connector-fill" id="fill-2"></div>
+              </div>
+            </div>
             <span>Initializing Llama CPP core server</span>
           </div>
+          
           <div class="step-item" id="step-3">
-            <div class="step-icon"></div>
+            <div class="step-node-wrapper">
+              <div class="step-circle">4</div>
+              <div class="step-connector">
+                <div class="step-connector-fill" id="fill-3"></div>
+              </div>
+            </div>
             <span>Loading model weights and context</span>
           </div>
+          
           <div class="step-item" id="step-4">
-            <div class="step-icon"></div>
+            <div class="step-node-wrapper">
+              <div class="step-circle">5</div>
+              <div class="step-connector">
+                <div class="step-connector-fill" id="fill-4"></div>
+              </div>
+            </div>
             <span>Allocating Whisper STT memory</span>
           </div>
+          
           <div class="step-item" id="step-5">
-            <div class="step-icon"></div>
+            <div class="step-node-wrapper">
+              <div class="step-circle">6</div>
+              <div class="step-connector">
+                <div class="step-connector-fill" id="fill-5"></div>
+              </div>
+            </div>
             <span>Offloading Qwen TTS vocal textures</span>
           </div>
+          
           <div class="step-item" id="step-6">
-            <div class="step-icon"></div>
+            <div class="step-node-wrapper">
+              <div class="step-circle">7</div>
+              <div class="step-connector">
+                <div class="step-connector-fill" id="fill-6"></div>
+              </div>
+            </div>
             <span>Executing warmup and auditory chimes</span>
           </div>
+          
           <div class="step-item" id="step-7">
-            <div class="step-icon"></div>
+            <div class="step-node-wrapper">
+              <div class="step-circle">8</div>
+              <div class="step-connector">
+                <div class="step-connector-fill" id="fill-7"></div>
+              </div>
+            </div>
             <span>Activating full-duplex speech loop</span>
           </div>
         </div>
@@ -435,10 +598,10 @@
         </div>
 
         <div class="controls-row">
-          <button id="btn-back" class="glow-btn hidden" style="background: rgba(0, 195, 255, 0.05); border: 1px solid rgba(0, 195, 255, 0.2); color: var(--accent-cyan); box-shadow: none;">
+          <button id="btn-back" class="btn-tactile-glass hidden">
             BACK TO SELECTION
           </button>
-          <button id="btn-start" class="glow-btn" disabled style="display: none;">
+          <button id="btn-start" class="btn-tactile-glass" disabled style="display: none;">
             START CHAT SESSION
           </button>
         </div>

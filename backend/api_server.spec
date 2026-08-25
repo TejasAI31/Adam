@@ -85,6 +85,7 @@ for pkg in dynamic_packages:
 
 # List of core packages to collect all resources and metadata for
 core_packages = [
+    'torch',
     'whisperx',
     'faster_whisper',
     'ctranslate2',

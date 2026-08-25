@@ -12,47 +12,47 @@
     }
     body {
       padding: 0;
-      background-color: var(--bg-darker);
-      border-radius: 28px;
-      border: 1px solid var(--border-color);
+      background-color: var(--bg-base);
+      border-radius: 16px;
+      border: 1px solid var(--border-translucent);
       overflow: hidden;
     }
     
     .titlebar {
-      border-top-left-radius: 28px;
-      border-top-right-radius: 28px;
+      border-top-left-radius: 16px;
+      border-top-right-radius: 16px;
     }
     
     .window-content {
-      padding: 20px;
+      padding: 24px;
       flex: 1;
       display: flex;
       flex-direction: column;
       height: 100%;
       min-height: 0;
       overflow-y: hidden;
-      border-bottom-left-radius: 28px;
-      border-bottom-right-radius: 28px;
+      border-bottom-left-radius: 16px;
+      border-bottom-right-radius: 16px;
     }
 
     .header-area {
       text-align: center;
-      margin-bottom: 12px;
+      margin-bottom: 16px;
     }
 
     .header-area h1 {
-      font-size: 22px;
+      font-size: 20px;
       font-weight: 700;
       letter-spacing: 0.5px;
       background: var(--accent-grad);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
-      margin-bottom: 2px;
+      margin-bottom: 4px;
     }
 
     .header-area p {
       color: var(--text-muted);
-      font-size: 12px;
+      font-size: 12.5px;
     }
 
     /* Scrollable middle container */
@@ -61,23 +61,25 @@
       min-height: 0;
       overflow-y: auto;
       padding-right: 6px;
-      margin-bottom: 12px;
+      margin-bottom: 16px;
       display: flex;
       flex-direction: column;
-      gap: 14px;
+      gap: 16px;
     }
 
     .model-group {
-      background: rgba(255, 255, 255, 0.01);
-      border: 1px solid var(--border-color);
-      border-radius: 10px;
-      padding: 14px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-translucent);
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0) 100%);
     }
 
     .group-header {
       font-size: 11px;
       font-weight: 600;
-      color: var(--accent-cyan);
+      color: var(--accent-sky);
       text-transform: uppercase;
       letter-spacing: 1px;
       margin-bottom: 8px;
@@ -87,47 +89,48 @@
     }
 
     .group-description {
-      font-size: 11px;
+      font-size: 11.5px;
       color: var(--text-muted);
-      margin-bottom: 10px;
+      margin-bottom: 12px;
       line-height: 1.4;
     }
 
     .card-list {
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 10px;
     }
 
     .model-card {
       background: rgba(255, 255, 255, 0.02);
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      border-radius: 8px;
-      padding: 10px 14px;
+      border: 1px solid var(--border-translucent);
+      border-radius: 10px;
+      padding: 12px 16px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: var(--fast-transition);
+      background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.01) 0%, rgba(255, 255, 255, 0) 100%);
     }
 
-    .model-card:hover {
-      border-color: rgba(0, 195, 255, 0.2);
+    .model-card:hover:not(.disabled) {
+      border-color: var(--border-hover);
       background: rgba(255, 255, 255, 0.03);
     }
 
-    /* Stand out selected model cards */
     .model-card.selected {
-      border-color: var(--accent-cyan);
-      background: rgba(0, 195, 255, 0.08);
-      box-shadow: 0 0 15px rgba(0, 195, 255, 0.2);
+      border-color: rgba(99, 102, 241, 0.4) !important;
+      background: rgba(99, 102, 241, 0.06) !important;
+      background-image: linear-gradient(180deg, rgba(99, 102, 241, 0.04) 0%, rgba(255, 255, 255, 0) 100%) !important;
+      box-shadow: 0 4px 15px rgba(99, 102, 241, 0.12);
       color: #ffffff;
     }
 
     .model-card.disabled {
-      opacity: 0.3;
+      opacity: 0.25;
       cursor: not-allowed;
-      border-color: rgba(255,255,255,0.02);
-      background: rgba(255,255,255,0.01);
+      border-color: rgba(255, 255, 255, 0.02);
+      background: rgba(255, 255, 255, 0.005);
     }
 
     .card-left {
@@ -139,14 +142,50 @@
     }
 
     .card-checkbox {
-      width: 18px;
-      height: 18px;
-      accent-color: var(--accent-cyan);
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border: 1.5px solid var(--border-translucent);
+      border-radius: 4px;
+      background: rgba(0, 0, 0, 0.3);
       cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: var(--fast-transition);
+    }
+
+    .card-checkbox:checked {
+      background: var(--accent-grad);
+      border-color: transparent;
+    }
+
+    .card-checkbox:checked::after {
+      content: "✓";
+      font-size: 10px;
+      color: white;
+      font-weight: bold;
+    }
+
+    .model-card.selected .card-checkbox {
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    /* Radio exceptions */
+    input[type="radio"].card-checkbox {
+      border-radius: 50%;
+    }
+    input[type="radio"].card-checkbox:checked::after {
+      content: "";
+      width: 6px;
+      height: 6px;
+      background: white;
+      border-radius: 50%;
     }
 
     .card-name {
-      font-size: 13px;
+      font-size: 13.5px;
       font-weight: 500;
       color: var(--text-main);
       white-space: nowrap;
@@ -170,7 +209,7 @@
     }
 
     .device-toggle-label {
-      font-size: 11px;
+      font-size: 10px;
       font-weight: 600;
       color: var(--text-dim);
       text-transform: uppercase;
@@ -178,22 +217,56 @@
       transition: color 0.2s ease;
     }
 
-    .model-card.selected .device-toggle-label {
-      color: var(--text-main);
+    .device-toggle-label {
+      display: none !important;
     }
 
     /* Switch toggle styling */
     .switch {
       position: relative;
       display: inline-block;
-      width: 42px;
-      height: 20px;
+      width: 76px;
+      height: 22px;
     }
 
     .switch input {
       opacity: 0;
       width: 0;
       height: 0;
+    }
+
+    /* CPU Label */
+    .switch:before {
+      content: "CPU";
+      position: absolute;
+      left: 6px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 8px;
+      font-weight: 800;
+      font-family: var(--font-sans), sans-serif;
+      z-index: 3;
+      pointer-events: none;
+      transition: color 0.2s ease, text-shadow 0.2s ease;
+      width: 28px;
+      text-align: center;
+    }
+
+    /* GPU Label */
+    .switch:after {
+      content: "GPU";
+      position: absolute;
+      right: 6px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 8px;
+      font-weight: 800;
+      font-family: var(--font-sans), sans-serif;
+      z-index: 3;
+      pointer-events: none;
+      transition: color 0.2s ease, text-shadow 0.2s ease;
+      width: 28px;
+      text-align: center;
     }
 
     .slider {
@@ -203,43 +276,58 @@
       left: 0;
       right: 0;
       bottom: 0;
-      background-color: rgba(255, 255, 255, 0.05);
-      transition: .3s;
-      border-radius: 20px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      background-color: rgba(255, 255, 255, 0.03);
+      transition: .2s cubic-bezier(0.4, 0, 0.2, 1);
+      border-radius: 12px;
+      border: 1px solid var(--border-translucent);
     }
 
+    /* Sliding pill background */
     .slider:before {
       position: absolute;
       content: "";
-      height: 12px;
-      width: 12px;
-      left: 3px;
-      bottom: 3px;
-      background-color: var(--text-dim);
-      transition: .3s;
-      border-radius: 50%;
+      height: 16px;
+      width: 34px;
+      left: 2px;
+      bottom: 2px;
+      background-color: rgba(255, 255, 255, 0.12);
+      transition: .2s cubic-bezier(0.4, 0, 0.2, 1);
+      border-radius: 9px;
+      z-index: 2;
+    }
+
+    /* Active States */
+    .switch:not(:has(input:checked)):before {
+      color: var(--text-main);
+      text-shadow: 0 0 4px rgba(255, 255, 255, 0.3);
+    }
+    .switch:not(:has(input:checked)):after {
+      color: var(--text-muted);
+    }
+
+    .switch:has(input:checked):before {
+      color: var(--text-muted);
+    }
+    .switch:has(input:checked):after {
+      color: var(--accent-sky);
+      text-shadow: 0 0 6px rgba(56, 189, 248, 0.6);
     }
 
     input:checked + .slider {
-      background-color: rgba(0, 195, 255, 0.15);
-      border-color: var(--accent-cyan);
+      background-color: rgba(255, 255, 255, 0.03);
+      border-color: var(--border-translucent);
     }
 
     input:checked + .slider:before {
-      transform: translateX(22px);
-      background-color: var(--accent-cyan);
-      box-shadow: 0 0 6px var(--accent-cyan);
+      transform: translateX(36px);
+      background-color: rgba(56, 189, 248, 0.2);
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      box-shadow: 0 0 8px rgba(56, 189, 248, 0.45);
     }
 
-    /* Inactive switches */
     .device-switch:disabled + .slider {
       cursor: not-allowed;
-      opacity: 0.2;
-    }
-
-    .device-switch:disabled + .slider:before {
-      background-color: rgba(255,255,255,0.1);
+      opacity: 0.15;
     }
 
     .family-warning {
@@ -251,29 +339,30 @@
 
     /* Fixed Bottom resource block */
     .resource-planner {
-      background: rgba(10, 18, 42, 0.85);
-      border: 1px solid var(--border-color);
-      border-radius: 12px;
-      padding: 14px;
-      box-shadow: var(--shadow-glow);
+      background: var(--bg-surface);
+      border: 1px solid var(--border-translucent);
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: var(--shadow-premium);
+      background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0) 100%);
     }
 
     .planner-title {
       font-size: 11px;
       font-weight: 600;
-      color: var(--accent-cyan);
+      color: var(--text-muted);
       text-transform: uppercase;
       letter-spacing: 0.8px;
-      margin-bottom: 10px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-      padding-bottom: 4px;
+      margin-bottom: 12px;
+      border-bottom: 1px solid var(--border-translucent);
+      padding-bottom: 6px;
     }
 
     .meters-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 14px;
-      margin-bottom: 12px;
+      gap: 16px;
+      margin-bottom: 14px;
     }
 
     .meter-label-row {
@@ -281,27 +370,54 @@
       justify-content: space-between;
       font-size: 11px;
       color: var(--text-muted);
-      margin-bottom: 4px;
+      margin-bottom: 6px;
     }
 
     .meter-bar-bg {
-      height: 6px;
+      height: 8px;
       background: rgba(255, 255, 255, 0.04);
-      border-radius: 3px;
+      border-radius: 4px;
+      position: relative;
+      border: 1px solid rgba(255, 255, 255, 0.02);
       overflow: hidden;
     }
 
     .meter-bar-fill {
       height: 100%;
-      background: var(--accent-grad);
-      width: 0%;
-      border-radius: 3px;
-      transition: width 0.4s ease;
+      background: linear-gradient(90deg, var(--accent-indigo) 0%, var(--accent-sky) 100%);
+      border-radius: 4px;
+      position: relative;
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.25);
+      transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .meter-bar-fill::after {
+      content: '';
+      position: absolute;
+      right: -4px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ffffff;
+      border: 2px solid var(--accent-sky);
+      box-shadow: 0 0 6px var(--accent-sky);
+      opacity: 0.9;
+    }
+    
+    .meter-bar-fill[style*="width: 0%"]::after,
+    .meter-bar-fill[style*="width:0%"]::after {
+      opacity: 0;
     }
 
     .meter-bar-fill.overflow {
       background: linear-gradient(135deg, var(--danger) 0%, #fca5a5 100%);
       box-shadow: 0 0 8px var(--danger);
+    }
+    .meter-bar-fill.overflow::after {
+      border-color: var(--danger);
+      box-shadow: 0 0 6px var(--danger);
     }
 
     .meter-bar-fill.warning {
@@ -333,11 +449,11 @@
     }
 
     .spinner {
-      width: 40px;
-      height: 40px;
-      border: 3px solid rgba(0, 102, 255, 0.1);
+      width: 32px;
+      height: 32px;
+      border: 2.5px solid rgba(255, 255, 255, 0.05);
       border-radius: 50%;
-      border-top-color: var(--accent-cyan);
+      border-top-color: var(--accent-sky);
       animation: spin 1s linear infinite;
       box-shadow: var(--shadow-glow);
     }
@@ -378,6 +494,48 @@
 
       <!-- Scanned models checklist -->
       <div class="selection-scroll-area">
+        
+        <!-- HARDWARE PRESET AUTO-SELECTOR -->
+        <div class="model-group" style="border-color: var(--accent-sky); background: rgba(56, 189, 248, 0.015); margin-bottom: 16px;">
+          <div class="group-header">
+            <span>Hardware Optimization Presets</span>
+            <span style="font-size: 10px; color: var(--accent-sky); font-weight: bold; font-family: var(--font-mono)">VRAM PRESETS</span>
+          </div>
+          <div class="group-description">
+            Select the hardware setting matching your computer's memory. Adam will automatically select the best model pipeline and execution device.
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 10px; margin-bottom: 6px;">
+            <button id="preset-cpu" class="glow-btn preset-btn" style="padding: 8px 6px; font-size: 11px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-translucent); border-radius: 8px; cursor: pointer; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; transition: all 0.2s; height: 60px;">
+              <span style="font-weight: 700; color: var(--text-main);">CPU Mode</span>
+              <span style="font-size: 9px; color: var(--text-dim); line-height: 1.1;">CPU Only / Low RAM</span>
+            </button>
+            <button id="preset-low" class="glow-btn preset-btn" style="padding: 8px 6px; font-size: 11px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-translucent); border-radius: 8px; cursor: pointer; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; transition: all 0.2s; height: 60px;">
+              <span style="font-weight: 700; color: var(--text-main);">Low VRAM</span>
+              <span style="font-size: 9px; color: var(--text-dim); line-height: 1.1;">4 GB Dedicated GPU</span>
+            </button>
+            <button id="preset-medium" class="glow-btn preset-btn" style="padding: 8px 6px; font-size: 11px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-translucent); border-radius: 8px; cursor: pointer; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; transition: all 0.2s; height: 60px;">
+              <span style="font-weight: 700; color: var(--text-main);">Medium VRAM</span>
+              <span style="font-size: 9px; color: var(--text-dim); line-height: 1.1;">6 GB Dedicated GPU</span>
+            </button>
+            <button id="preset-high" class="glow-btn preset-btn" style="padding: 8px 6px; font-size: 11px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-translucent); border-radius: 8px; cursor: pointer; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; transition: all 0.2s; height: 60px;">
+              <span style="font-weight: 700; color: var(--text-main);">High VRAM</span>
+              <span style="font-size: 9px; color: var(--text-dim); line-height: 1.1;">8 GB+ GPU (Fastest)</span>
+            </button>
+          </div>
+          
+          <!-- SUBOPTIONS FOR MEDIUM / HIGH VRAM -->
+          <div id="vram-suboption-container" style="margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--border-translucent); display: none; flex-direction: column; gap: 8px;">
+            <div style="font-size: 11px; font-weight: 600; color: var(--accent-sky);">Choose Pipeline Optimization Mode:</div>
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
+              <button id="subopt-performance" class="glow-btn" style="padding: 8px; font-size: 11px; background: rgba(56, 189, 248, 0.1); border: 1px solid var(--accent-sky); border-radius: 6px; cursor: pointer; text-align: center; color: var(--text-main); font-weight: 700; transition: all 0.2s;">
+                Performance Mode
+              </button>
+              <button id="subopt-versatility" class="glow-btn" style="padding: 8px; font-size: 11px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-translucent); border-radius: 6px; cursor: pointer; text-align: center; color: var(--text-dim); transition: all 0.2s;">
+                Versatility Mode
+              </button>
+            </div>
+          </div>
+        </div>
         
         <!-- MAIN MODELS -->
         <div class="model-group">

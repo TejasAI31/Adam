@@ -2,9 +2,6 @@
 
 import os
 import dataclasses
-from scipy.signal import butter
-
-
 @dataclasses.dataclass
 class AudioConfig:
     sample_rate: int = 16000
@@ -14,11 +11,17 @@ class AudioConfig:
     padding_frames: int = int(500 / frame_duration_ms)
     min_speech_duration: float = 0.8
     max_speech_duration: float = 12.0
-    sos_filter: object = dataclasses.field(
-        default_factory=lambda: butter(
-            N=4, Wn=[80, 7500], btype="bandpass", fs=16000, output="sos"
-        )
-    )
+    _sos_filter: object = dataclasses.field(default=None, init=False, repr=False)
+
+    @property
+    def sos_filter(self):
+        if self._sos_filter is None:
+            from scipy.signal import butter
+            self._sos_filter = butter(
+                N=4, Wn=[80, 7500], btype="bandpass", fs=16000, output="sos"
+            )
+        return self._sos_filter
+
 
 
 @dataclasses.dataclass
@@ -51,7 +54,7 @@ model_cfg = ModelConfig()
 # Load settings from JSON if exists to allow user configurations
 import sys
 
-def get_user_settings_path():
+def get_user_data_dir():
     # Resolve the OS-specific application data folder matching Electron's app.getPath('userData')
     if sys.platform == "win32":
         app_data = os.environ.get("APPDATA")
@@ -68,7 +71,10 @@ def get_user_settings_path():
     except Exception:
         pass
         
-    return os.path.join(base_dir, "settings.json")
+    return base_dir
+
+def get_user_settings_path():
+    return os.path.join(get_user_data_dir(), "settings.json")
 
 SETTINGS_JSON_PATH = get_user_settings_path()
 if os.path.exists(SETTINGS_JSON_PATH):

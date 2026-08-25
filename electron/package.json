@@ -42,10 +42,12 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Adam"
+      "shortcutName": "Adam",
+      "deleteAppDataOnUninstall": true,
+      "include": "build/installer.nsh"
     },
     "nsisWeb": {
-      "appPackageUrl": "http://localhost"
+      "appPackageUrl": "https://github.com/TejasAI31/Adam/releases/download/v${version}/"
     }
   }
 }

@@ -1,6 +1,15 @@
 import os
 import sys
 
+# Limit thread pools for CPU math libraries (NumPy, PyTorch, OpenMP, etc.) to 4 threads
+# and optimize CUDA allocator memory fragmentation
+os.environ["OMP_NUM_THREADS"] = "4"
+os.environ["MKL_NUM_THREADS"] = "4"
+os.environ["OPENBLAS_NUM_THREADS"] = "4"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "4"
+os.environ["NUMEXPR_NUM_THREADS"] = "4"
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
 # Mock importlib.metadata.version to resolve torchcodec in PyInstaller compiled environment
 import importlib.metadata
 _orig_version = importlib.metadata.version
@@ -12,9 +21,6 @@ def _mock_version(package_name):
             return "0.7.0"
         raise
 importlib.metadata.version = _mock_version
-
-# Crucial: Disable Hugging Face lazy loading so PyInstaller compiled imports resolve eagerly
-os.environ["TRANSFORMERS_NO_LAZY_LOADING"] = "1"
 
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="pyannote")
@@ -37,8 +43,6 @@ import urllib.request
 from typing import Dict, List, Optional
 from pydantic import BaseModel
 import psutil
-import torch
-
 from fastapi import FastAPI, Request, BackgroundTasks, HTTPException
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -49,27 +53,25 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import src.utils.dll_setup
 
 # Explicit eager imports of lazy-loaded transformers/pyannote submodules to ensure PyInstaller bundles them
-try:
-    import transformers.pipelines
-    import transformers.models.auto
-    import transformers.models.auto.processing_auto
-    from transformers import pipeline, AutoProcessor
-except ImportError:
-    pass
+def _pyinstaller_eager_imports():
+    try:
+        import transformers.pipelines
+        import transformers.models.auto
+        import transformers.models.auto.processing_auto
+        from transformers import pipeline, AutoProcessor
+    except ImportError:
+        pass
 
-try:
-    import pyannote.pipeline
-    import pyannote.audio.core.pipeline
-    from pyannote.audio import Pipeline as PyannotePipeline
-except ImportError:
-    pass
+    try:
+        import pyannote.pipeline
+        import pyannote.audio.core.pipeline
+        from pyannote.audio import Pipeline as PyannotePipeline
+    except ImportError:
+        pass
+
 
 from config.settings import audio_cfg, model_cfg
 from src.audio.device import SHARED_AUDIO
-from src.stt.whisperx_engine import load_stt_engine
-from src.tts.qwen_tts import load_tts_engine, warmup_and_generate_chime
-from src.llm.llama_engine import LlamaServerClient
-from src.orchestration.duplex_manager import FullDuplexManager
 
 def run_garbage_collector():
     while True:
@@ -122,14 +124,133 @@ app.add_middleware(
 
 # Global engine states
 llama_process: Optional[subprocess.Popen] = None
-llm_client: Optional[LlamaServerClient] = None
+llm_client = None
 stt_engine = None
 tts_engine = None
-duplex_manager: Optional[FullDuplexManager] = None
+duplex_manager = None
 session_histories = {}
 
+cached_resources = {
+    "cpu": 0.0,
+    "ram": {"used": 0.0, "total": 0.0, "percent": 0.0},
+    "gpu": 0.0,
+    "vram": {"used": 0.0, "total": 0.0, "percent": 0.0}
+}
+
+def update_resource_stats_once():
+    global cached_resources
+    import psutil
+    import shutil
+    import subprocess
+    
+    # 1. CPU / RAM
+    try:
+        cpu_usage = psutil.cpu_percent(interval=None)
+        ram = psutil.virtual_memory()
+        ram_usage = ram.percent
+        ram_total = ram.total / (1024**3)
+        ram_used = ram.used / (1024**3)
+        cached_resources["cpu"] = cpu_usage
+        cached_resources["ram"] = {
+            "used": round(ram_used, 2),
+            "total": round(ram_total, 2),
+            "percent": round(ram_usage, 1)
+        }
+    except:
+        pass
+        
+    # 2. GPU / VRAM
+    gpu_usage = 0.0
+    vram_used = 0.0
+    vram_total = 0.0
+    
+    # Try pynvml if available
+    try:
+        import pynvml
+        pynvml.nvmlInit()
+        handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+        util = pynvml.nvmlDeviceGetUtilizationRates(handle)
+        gpu_usage = float(util.gpu)
+        mem_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+        vram_used = mem_info.used / (1024**3)
+        vram_total = mem_info.total / (1024**3)
+    except:
+        pass
+        
+    # Fallback to nvidia-smi if nvml failed or is not available
+    if vram_total == 0.0:
+        nv_smi = shutil.which("nvidia-smi") or "C:\\Program Files\\NVIDIA Corporation\\NVSMI\\nvidia-smi.exe"
+        if os.path.exists(nv_smi) or shutil.which("nvidia-smi"):
+            try:
+                res = subprocess.run(
+                    ["nvidia-smi", "--query-gpu=utilization.gpu,memory.used,memory.total", "--format=csv,noheader,nounits"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    timeout=1.0
+                )
+                if res.returncode == 0:
+                    parts = res.stdout.strip().split(",")
+                    gpu_usage = float(parts[0].strip())
+                    vram_used = float(parts[1].strip()) / 1024.0
+                    vram_total = float(parts[2].strip()) / 1024.0
+            except:
+                pass
+        
+    # Fallback to PyTorch memory check if cuda is loaded
+    if vram_total == 0.0:
+        try:
+            import torch
+            if torch.cuda.is_available():
+                dev = torch.cuda.current_device()
+                free, total = torch.cuda.mem_get_info(dev)
+                vram_total = total / (1024**3)
+                vram_used = (total - free) / (1024**3)
+        except:
+            pass
+    
+    vram_percent = 0.0
+    if vram_total > 0:
+        vram_percent = (vram_used / vram_total) * 100.0
+        
+    cached_resources["gpu"] = gpu_usage
+    cached_resources["vram"] = {
+        "used": round(vram_used, 2),
+        "total": round(vram_total, 2),
+        "percent": round(vram_percent, 1)
+    }
+
+# Prime the resource metrics immediately
+try:
+    update_resource_stats_once()
+except:
+    pass
+
+def resource_monitor_thread_fn():
+    import time
+    while True:
+        try:
+            update_resource_stats_once()
+        except:
+            pass
+        time.sleep(2.0)
+
+
 def get_sessions_json_path():
-    return os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "sessions.json")
+    from config.settings import get_user_data_dir
+    import shutil
+    app_data_path = os.path.join(get_user_data_dir(), "sessions.json")
+    
+    # Migrates bundled sessions.json to AppData if not present
+    if not os.path.exists(app_data_path):
+        bundled_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "sessions.json")
+        if os.path.exists(bundled_path):
+            try:
+                shutil.copy2(bundled_path, app_data_path)
+            except Exception as e:
+                print("Failed to copy bundled sessions.json:", e)
+                
+    return app_data_path
 
 def load_sessions_list() -> list:
     path = get_sessions_json_path()
@@ -194,6 +315,29 @@ def append_message_to_sessions(session_id, sender, text, msg_id, attachments=Non
         
         broadcast_event("sessions_updated", {})
 
+def sync_session_history_to_persistence(session_id: str, prune_ui_messages: bool = False):
+    global session_histories, duplex_manager
+    if not session_id or not duplex_manager:
+        return
+    with duplex_manager.history_lock:
+        history_copy = list(duplex_manager.history)
+    
+    session_histories[session_id] = history_copy
+    
+    if prune_ui_messages:
+        try:
+            sessions = load_sessions_list()
+            session = next((s for s in sessions if s.get("id") == session_id), None)
+            if session:
+                llm_msg_count = sum(1 for m in history_copy if m.get("role") in ("user", "assistant"))
+                if len(session["messages"]) > llm_msg_count and llm_msg_count > 0:
+                    session["messages"] = session["messages"][-llm_msg_count:]
+                    save_sessions_list(sessions)
+                    broadcast_event("sessions_updated", {})
+        except Exception as e:
+            print(f"Error syncing session {session_id} to persistence:", e)
+
+
 # Load persistent sessions into memory session_histories on boot
 try:
     saved_sessions = load_sessions_list()
@@ -219,6 +363,9 @@ setup_progress = {"status": "Not started", "progress": 0, "error": None, "cause"
 voice_loop_thread: Optional[threading.Thread] = None
 voice_loop_running = False
 voice_loop_stop_event = threading.Event()
+voice_input_muted = True
+active_session_id = None
+current_processing_session_id = None
 
 # SSE event broadcast lists
 active_sse_queues: List[asyncio.Queue] = []
@@ -399,6 +546,19 @@ def tail_llama_log():
                     break
                 line = f.readline()
                 if line:
+                    line_lower = line.lower()
+                    # Filter out verbose streamed chunks, parsed messages, and template errors/warnings
+                    suppress = [
+                        "streamed chunk",
+                        "parsed message",
+                        "template error",
+                        "template warning",
+                        "chat template",
+                        "chat_template",
+                        "jinja"
+                    ]
+                    if any(s in line_lower for s in suppress):
+                        continue
                     broadcast_log("LlamaCPP", line)
                 else:
                     time.sleep(0.1)
@@ -522,11 +682,14 @@ def run_setup_worker(payload: SetupPayload):
             llama_opts = s_dict.get("llama", {})
             port = int(llama_opts.get("SERVER_PORT", model_cfg.server_port))
             host = llama_opts.get("SERVER_HOST", model_cfg.server_host)
-            ctx_size = int(llama_opts.get("context_size", 50000))
+            ctx_size = int(llama_opts.get("context_size", 30000))
             ngl = main_ngl
             flash_attn = llama_opts.get("flash_attn", "on")
             cache_k = llama_opts.get("cache_type_k", "q4_0")
             cache_v = llama_opts.get("cache_type_v", "q4_0")
+            
+            # Determine optimal threads targeting physical CPU cores for maximum speed/low overhead
+            cpu_threads = psutil.cpu_count(logical=False) or 4
             
             cmd = [
                 llama_bin,
@@ -534,14 +697,14 @@ def run_setup_worker(payload: SetupPayload):
                 "--host", host,
                 "--port", str(port),
                 "-c", str(ctx_size),
+                "-t", str(cpu_threads),
                 "-ngl", str(ngl),
                 "--flash-attn", flash_attn,
                 "--cache-type-k", cache_k,
                 "--cache-type-v", cache_v,
-                "--verbose",
                 "--log-colors", "auto"
             ]
-            if "2b" in payload.main_model.lower() or "qwen3vl" in payload.main_model.lower():
+            if "qwen" in payload.main_model.lower():
                 cmd.extend(["--jinja", "--chat-template-file", "config/qwen_fixed.jinja"])
             if mmproj_path:
                 cmd.extend(["--mmproj", mmproj_path])
@@ -600,22 +763,28 @@ def run_setup_worker(payload: SetupPayload):
             broadcast_log("SYSTEM", "llama-server.exe is online!")
             
             # 6. Load LLM client
+            from src.llm.llama_engine import LlamaServerClient
             llm_client = LlamaServerClient(host=host, port=port, timeout=model_cfg.server_timeout)
             
             # 7. Load STT
             if payload.stt_enabled:
                 setup_progress.update({"status": "Loading WhisperX Speech-to-Text engine...", "progress": 65})
                 broadcast_event("setup_progress", setup_progress)
+                from src.stt.whisperx_engine import load_stt_engine
                 stt_engine = load_stt_engine()
                 broadcast_log("SYSTEM", "WhisperX STT engine loaded successfully.")
             else:
                 stt_engine = None
                 broadcast_log("SYSTEM", "WhisperX STT engine loading skipped.")
             
+            # Import warmup function unconditionally to avoid UnboundLocalError when tts is disabled
+            from src.tts.qwen_tts import warmup_and_generate_chime
+
             # 8. Load TTS
             if payload.tts_enabled:
                 setup_progress.update({"status": "Loading Qwen Text-to-Speech engine (GPU)...", "progress": 80})
                 broadcast_event("setup_progress", setup_progress)
+                from src.tts.qwen_tts import load_tts_engine
                 tts_engine = load_tts_engine()
                 broadcast_log("SYSTEM", "TTS engine loaded successfully.")
             else:
@@ -630,7 +799,12 @@ def run_setup_worker(payload: SetupPayload):
                 broadcast_log("SYSTEM", "Warmup complete.")
             
             # 10. Instantiate Duplex Manager
+            from src.orchestration.duplex_manager import FullDuplexManager
             duplex_manager = FullDuplexManager(llm_model=llm_client, tts_model=tts_engine)
+            
+            def on_playback_status(active: bool):
+                broadcast_event("playback_status", {"active": active})
+            duplex_manager.on_playback_status = on_playback_status
             
             # 11. Start duplex voice loop in background
             if payload.stt_enabled:
@@ -673,7 +847,7 @@ def start_duplex_loop():
     broadcast_log("SYSTEM", "Duplex voice activation loop online.")
 
 def voice_loop_worker():
-    global duplex_manager, stt_engine, voice_loop_running, voice_loop_stop_event
+    global duplex_manager, stt_engine, voice_loop_running, voice_loop_stop_event, voice_input_muted
     
     import webrtcvad
     import pyaudio
@@ -710,6 +884,10 @@ def voice_loop_worker():
     
     try:
         while not voice_loop_stop_event.is_set():
+            if voice_input_muted:
+                time.sleep(0.1)
+                continue
+                
             try:
                 frame = stream.read(audio_cfg.frame_size, exception_on_overflow=False)
             except Exception:
@@ -801,37 +979,43 @@ def voice_loop_worker():
             pass
 
 def run_chat_pipeline_helper(prompt: str, image_input: Optional[str] = None, speech_enabled: bool = True, session_id: Optional[str] = None, attachments: Optional[List[dict]] = None):
-    global duplex_manager, session_histories
+    global duplex_manager, session_histories, active_session_id, current_processing_session_id
     if not duplex_manager:
         broadcast_log("ERROR", "Duplex manager not ready. Initialize setup first.")
         return
         
+    target_session_id = session_id or active_session_id
+    
+    # Only interrupt if the user sent a prompt in the SAME session that is currently processing!
+    # Or if we want to interrupt speech synthesis.
     if duplex_manager:
-        duplex_manager.interrupt()
+        if target_session_id == current_processing_session_id or duplex_manager.is_speaking:
+            duplex_manager.interrupt()
         
     with chat_pipeline_lock:
-        if session_id:
-            if session_id not in session_histories:
-                session_histories[session_id] = []
-            duplex_manager.history = session_histories[session_id]
+        current_processing_session_id = target_session_id
+        if target_session_id:
+            if target_session_id not in session_histories:
+                session_histories[target_session_id] = []
+            duplex_manager.history = session_histories[target_session_id]
             
         current_response_text = ""
         msg_id = f"msg_{int(time.time()*1000)}_asst"
         
         # Broadcast start
-        broadcast_event("chat_status", {"status": "typing", "msg_id": msg_id, "session_id": session_id})
+        broadcast_event("chat_status", {"status": "typing", "msg_id": msg_id, "session_id": target_session_id})
         
         def pipeline_callback(event_type, data):
             nonlocal current_response_text
             if event_type == "text":
                 current_response_text += data
-                broadcast_event("chat_chunk", {"msg_id": msg_id, "text": data, "session_id": session_id})
+                broadcast_event("chat_chunk", {"msg_id": msg_id, "text": data, "session_id": target_session_id})
             elif event_type == "tool_start":
                 broadcast_log("TOOL", f"Starting tool {data.get('name')} with arguments {data.get('arguments')}")
-                broadcast_event("chat_tool", {"status": "start", "msg_id": msg_id, "tool": data, "session_id": session_id})
+                broadcast_event("chat_tool", {"status": "start", "msg_id": msg_id, "tool": data, "session_id": target_session_id})
             elif event_type == "tool_end":
                 broadcast_log("TOOL", f"Tool {data.get('name')} returned output of length {len(str(data.get('output')))}")
-                broadcast_event("chat_tool", {"status": "end", "msg_id": msg_id, "tool": data, "session_id": session_id})
+                broadcast_event("chat_tool", {"status": "end", "msg_id": msg_id, "tool": data, "session_id": target_session_id})
 
         try:
             # Import tools dynamically
@@ -899,15 +1083,17 @@ def run_chat_pipeline_helper(prompt: str, image_input: Optional[str] = None, spe
                 "text": current_response_text, 
                 "type": "text", 
                 "id": msg_id,
-                "session_id": session_id
+                "session_id": target_session_id
             })
-            append_message_to_sessions(session_id, "assistant", current_response_text, msg_id)
+            append_message_to_sessions(target_session_id, "assistant", current_response_text, msg_id)
         except Exception as err:
             broadcast_log("ERROR", f"LLM Chat pipeline execution error: {err}")
-            broadcast_event("chat_error", {"msg_id": msg_id, "error": str(err), "session_id": session_id})
+            broadcast_event("chat_error", {"msg_id": msg_id, "error": str(err), "session_id": target_session_id})
         finally:
-            if session_id and duplex_manager:
-                session_histories[session_id] = duplex_manager.history
+            if target_session_id and duplex_manager:
+                sync_session_history_to_persistence(target_session_id)
+
+            current_processing_session_id = None
             import gc
             import torch
             if torch.cuda.is_available():
@@ -920,10 +1106,13 @@ def run_chat_pipeline_helper(prompt: str, image_input: Optional[str] = None, spe
 # --- API ENDPOINTS ---
 
 # --- DOWNLOAD MANAGER FOR INCORPORATED MODELS ---
-class DownloadPayload(BaseModel):
+class ModelDownloadPayload(BaseModel):
     model_name: str
+    restart: Optional[bool] = False
+
 
 download_statuses = {}
+cancelled_downloads = set()
 download_lock = threading.Lock()
 
 
@@ -949,6 +1138,370 @@ DOWNLOAD_URLS = {
         "path": os.path.join("models", "mmproj", "mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf")
     }
 }
+
+def download_gguf_single_threaded(url, dest_path, temp_path, model_name):
+    global download_statuses, cancelled_downloads
+    
+    downloaded = 0
+    if os.path.exists(temp_path):
+        try:
+            downloaded = os.path.getsize(temp_path)
+        except:
+            downloaded = 0
+            
+    with download_lock:
+        download_statuses[model_name] = {
+            "status": "downloading",
+            "progress": 0.0,
+            "downloaded_bytes": downloaded,
+            "total_bytes": 0,
+            "speed_mbps": 0.0,
+            "model_name": model_name,
+            "error": None
+        }
+        
+    print(f"[Downloader] Starting/resuming GGUF single-threaded download from {url} at offset {downloaded}")
+    req = urllib.request.Request(
+        url, 
+        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    )
+    if downloaded > 0:
+        req.add_header("Range", f"bytes={downloaded}-")
+        
+    try:
+        response = urllib.request.urlopen(req)
+        status_code = response.status
+    except urllib.error.HTTPError as he:
+        if he.code == 416:
+            downloaded = 0
+            req = urllib.request.Request(
+                url, 
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+            )
+            response = urllib.request.urlopen(req)
+            status_code = response.status
+        else:
+            raise he
+
+    if status_code == 206:
+        content_range = response.headers.get('Content-Range')
+        if content_range:
+            total_size = int(content_range.split('/')[-1])
+        else:
+            total_size = downloaded + int(response.headers.get('content-length', 0))
+    else:
+        downloaded = 0
+        total_size = int(response.headers.get('content-length', 0))
+        
+    with download_lock:
+        if model_name in download_statuses:
+            download_statuses[model_name]["total_bytes"] = total_size
+            download_statuses[model_name]["downloaded_bytes"] = downloaded
+            
+    block_size = 1024 * 1024
+    start_time = time.time()
+    last_report_time = start_time
+    last_report_downloaded = downloaded
+    
+    mode = 'ab' if downloaded > 0 else 'wb'
+    with open(temp_path, mode) as out_file:
+        while True:
+            with download_lock:
+                if model_name in cancelled_downloads:
+                    break
+            buffer = response.read(block_size)
+            if not buffer:
+                break
+            out_file.write(buffer)
+            downloaded += len(buffer)
+            
+            current_time = time.time()
+            if current_time - last_report_time >= 0.5:
+                duration = current_time - last_report_time
+                bytes_sent = downloaded - last_report_downloaded
+                speed_mbps = round((bytes_sent * 8) / (1024 * 1024 * duration), 2)
+                progress = round((downloaded / total_size) * 100, 2) if total_size > 0 else 0.0
+                
+                with download_lock:
+                    if model_name in download_statuses:
+                        download_statuses[model_name].update({
+                            "progress": progress,
+                            "downloaded_bytes": downloaded,
+                            "speed_mbps": speed_mbps
+                        })
+                    
+                broadcast_event("download_progress", {
+                    "model_name": model_name,
+                    "progress": progress,
+                    "speed_mbps": speed_mbps,
+                    "downloaded_bytes": downloaded,
+                    "total_bytes": total_size
+                })
+                
+                last_report_time = current_time
+                last_report_downloaded = downloaded
+                
+    with download_lock:
+        is_cancelled = model_name in cancelled_downloads
+        
+    if is_cancelled:
+        with download_lock:
+            cancelled_downloads.discard(model_name)
+            if model_name in download_statuses:
+                download_statuses[model_name].update({
+                    "status": "cancelled",
+                    "error": None
+                })
+        broadcast_event("download_progress", {
+            "model_name": model_name,
+            "status": "cancelled",
+            "progress": round((downloaded / total_size) * 100, 2) if total_size > 0 else 0.0
+        })
+        print(f"[Downloader] Cancelled download of {model_name} (saved partial file).")
+        return
+
+    if os.path.exists(dest_path):
+        try:
+            os.remove(dest_path)
+        except:
+            pass
+    os.rename(temp_path, dest_path)
+    
+    with download_lock:
+        if model_name in download_statuses:
+            download_statuses[model_name].update({
+                "status": "completed",
+                "progress": 100.0,
+                "downloaded_bytes": total_size,
+                "speed_mbps": 0.0
+            })
+            
+    broadcast_event("download_progress", {
+        "model_name": model_name,
+        "progress": 100.0,
+        "speed_mbps": 0.0,
+        "downloaded_bytes": total_size,
+        "total_bytes": total_size,
+        "status": "completed"
+    })
+    print(f"[Downloader] Completed GGUF single-threaded download of {model_name}")
+
+
+def download_gguf_parallel(url, dest_path, temp_path, model_name, num_connections=8):
+    global download_statuses, cancelled_downloads
+    
+    req = urllib.request.Request(url, method='HEAD', headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+    try:
+        with urllib.request.urlopen(req) as resp:
+            total_size = int(resp.headers.get('content-length', 0))
+            supports_ranges = total_size > 0
+    except Exception as e:
+        print(f"[Downloader] HEAD request failed for {url}: {e}")
+        supports_ranges = False
+        total_size = 0
+
+    if not supports_ranges or total_size < 5 * 1024 * 1024:
+        return download_gguf_single_threaded(url, dest_path, temp_path, model_name)
+
+    with download_lock:
+        download_statuses[model_name] = {
+            "status": "downloading",
+            "progress": 0.0,
+            "downloaded_bytes": 0,
+            "total_bytes": total_size,
+            "speed_mbps": 0.0,
+            "model_name": model_name,
+            "error": None
+        }
+
+    downloaded_offset = 0
+    if os.path.exists(temp_path):
+        try:
+            downloaded_offset = os.path.getsize(temp_path)
+            if downloaded_offset >= total_size:
+                if os.path.exists(dest_path):
+                    os.remove(dest_path)
+                os.rename(temp_path, dest_path)
+                with download_lock:
+                    download_statuses[model_name].update({
+                        "status": "completed",
+                        "progress": 100.0,
+                        "downloaded_bytes": total_size
+                    })
+                return
+        except:
+            downloaded_offset = 0
+
+    if downloaded_offset == 0:
+        try:
+            with open(temp_path, "wb") as f:
+                f.truncate(total_size)
+        except Exception as e:
+            raise Exception(f"Failed to pre-allocate temp file: {e}")
+    else:
+        try:
+            with open(temp_path, "r+b") as f:
+                f.truncate(total_size)
+        except Exception as e:
+            print(f"Failed to truncate temp file on resume: {e}")
+
+    remaining_bytes = total_size - downloaded_offset
+    chunk_size = remaining_bytes // num_connections
+    
+    chunks = []
+    for i in range(num_connections):
+        start = downloaded_offset + i * chunk_size
+        end = downloaded_offset + (i + 1) * chunk_size - 1
+        if i == num_connections - 1:
+            end = total_size - 1
+        chunks.append((start, end))
+
+    progress_lock = threading.Lock()
+    chunk_downloaded = [0] * num_connections
+    thread_exceptions = []
+    
+    def download_chunk(chunk_idx, start_byte, end_byte):
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                    "Range": f"bytes={start_byte}-{end_byte}"
+                }
+            )
+            
+            with urllib.request.urlopen(req) as response:
+                if response.status not in [200, 206]:
+                    raise Exception(f"HTTP Status Code {response.status}")
+                
+                with open(temp_path, "r+b") as out_file:
+                    out_file.seek(start_byte)
+                    
+                    block_size = 256 * 1024
+                    bytes_written = 0
+                    total_to_write = end_byte - start_byte + 1
+                    
+                    while bytes_written < total_to_write:
+                        with download_lock:
+                            if model_name in cancelled_downloads:
+                                return
+                        
+                        to_read = min(block_size, total_to_write - bytes_written)
+                        buffer = response.read(to_read)
+                        if not buffer:
+                            break
+                        
+                        out_file.write(buffer)
+                        bytes_written += len(buffer)
+                        
+                        with progress_lock:
+                            chunk_downloaded[chunk_idx] = bytes_written
+        except Exception as exc:
+            print(f"[Downloader] Chunk {chunk_idx} failed: {exc}")
+            thread_exceptions.append(exc)
+
+    threads = []
+    for idx, (start, end) in enumerate(chunks):
+        t = threading.Thread(target=download_chunk, args=(idx, start, end), daemon=True)
+        t.start()
+        threads.append(t)
+
+    start_time = time.time()
+    last_report_time = start_time
+    last_total_downloaded = downloaded_offset
+    current_downloaded = downloaded_offset
+    
+    while any(t.is_alive() for t in threads):
+        time.sleep(0.5)
+        
+        with download_lock:
+            if model_name in cancelled_downloads:
+                break
+        
+        with progress_lock:
+            current_downloaded = downloaded_offset + sum(chunk_downloaded)
+            
+        current_time = time.time()
+        duration = current_time - last_report_time
+        if duration >= 0.5:
+            bytes_sent = current_downloaded - last_total_downloaded
+            speed_mbps = round((bytes_sent * 8) / (1024 * 1024 * duration), 2)
+            progress = round((current_downloaded / total_size) * 100, 2) if total_size > 0 else 0.0
+            
+            with download_lock:
+                if model_name in download_statuses:
+                    download_statuses[model_name].update({
+                        "progress": progress,
+                        "downloaded_bytes": current_downloaded,
+                        "speed_mbps": speed_mbps
+                    })
+            
+            broadcast_event("download_progress", {
+                "model_name": model_name,
+                "progress": progress,
+                "speed_mbps": speed_mbps,
+                "downloaded_bytes": current_downloaded,
+                "total_bytes": total_size
+            })
+            
+            last_report_time = current_time
+            last_total_downloaded = current_downloaded
+
+    for t in threads:
+        t.join()
+
+    with download_lock:
+        is_cancelled = model_name in cancelled_downloads
+
+    if is_cancelled:
+        with download_lock:
+            cancelled_downloads.discard(model_name)
+            if model_name in download_statuses:
+                download_statuses[model_name].update({
+                    "status": "cancelled",
+                    "error": None
+                })
+        broadcast_event("download_progress", {
+            "model_name": model_name,
+            "status": "cancelled",
+            "progress": round((current_downloaded / total_size) * 100, 2) if total_size > 0 else 0.0
+        })
+        print(f"[Downloader] Cancelled download of {model_name} (saved partial file).")
+        return
+
+    if thread_exceptions:
+        raise Exception(f"Download threads failed: {thread_exceptions[0]}")
+
+    final_size = os.path.getsize(temp_path)
+    if final_size != total_size:
+        raise Exception(f"File size mismatch: got {final_size} bytes, expected {total_size} bytes")
+
+    if os.path.exists(dest_path):
+        try:
+            os.remove(dest_path)
+        except:
+            pass
+    os.rename(temp_path, dest_path)
+    
+    with download_lock:
+        if model_name in download_statuses:
+            download_statuses[model_name].update({
+                "status": "completed",
+                "progress": 100.0,
+                "downloaded_bytes": total_size,
+                "speed_mbps": 0.0
+            })
+            
+    broadcast_event("download_progress", {
+        "model_name": model_name,
+        "progress": 100.0,
+        "speed_mbps": 0.0,
+        "downloaded_bytes": total_size,
+        "total_bytes": total_size,
+        "status": "completed"
+    })
+    print(f"[Downloader] Completed parallel download of {model_name}")
+
 
 def run_download_thread(model_name: str):
     global download_statuses
@@ -978,7 +1531,6 @@ def run_download_thread(model_name: str):
             
             print(f"[Downloader] Starting HF download for {repo_id}")
             
-            # 1. Fetch commit SHA and total size of repository
             from huggingface_hub import HfApi
             api = HfApi()
             repo_info = api.model_info(repo_id)
@@ -995,7 +1547,6 @@ def run_download_thread(model_name: str):
             with download_lock:
                 download_statuses[model_name]["total_bytes"] = hf_total_bytes
                 
-            # 2. Monkeypatch tqdm to catch progress
             import sys
             import huggingface_hub.utils
             import huggingface_hub.utils.tqdm
@@ -1011,6 +1562,9 @@ def run_download_thread(model_name: str):
                     super().__init__(*args, **kwargs)
                     
                 def update(self, n=1):
+                    with download_lock:
+                        if model_name in cancelled_downloads:
+                            raise Exception("Download cancelled by user")
                     super().update(n)
                     nonlocal hf_download_bytes
                     hf_download_bytes += n
@@ -1040,16 +1594,25 @@ def run_download_thread(model_name: str):
             if hasattr(huggingface_hub.utils, 'tqdm'):
                 huggingface_hub.utils.tqdm = ProgressTqdm
             
-            # 3. Trigger snapshot download directly to local snapshot directory to bypass symlink creation (WinError 1314)
             from huggingface_hub import snapshot_download
-            snapshot_download(repo_id=repo_id, local_dir=local_dir_path, local_dir_use_symlinks=False)
+            snapshot_download(
+                repo_id=repo_id,
+                local_dir=local_dir_path,
+                local_dir_use_symlinks=False,
+                max_workers=8
+            )
             
-            # Restore tqdm
             tqdm_module.tqdm = original_tqdm
             if hasattr(huggingface_hub.utils, 'tqdm'):
                 huggingface_hub.utils.tqdm = original_tqdm
             
-            # Download completed successfully!
+            complete_marker = os.path.join(local_dir_path, "download_complete.json")
+            try:
+                with open(complete_marker, "w") as f:
+                    json.dump({"completed_at": time.time(), "total_bytes": hf_total_bytes}, f)
+            except Exception as marker_err:
+                print(f"[Downloader] Error writing marker file: {marker_err}")
+
             with download_lock:
                 if model_name in download_statuses:
                     download_statuses[model_name].update({
@@ -1071,14 +1634,32 @@ def run_download_thread(model_name: str):
             return
             
         except Exception as e:
-            print(f"[Downloader] Error downloading HF model {model_name}: {e}")
-            # Restore tqdm if needed
             try:
                 tqdm_module.tqdm = original_tqdm
                 if hasattr(huggingface_hub.utils, 'tqdm'):
                     huggingface_hub.utils.tqdm = original_tqdm
             except:
                 pass
+                
+            with download_lock:
+                is_cancelled = model_name in cancelled_downloads
+                
+            if is_cancelled:
+                with download_lock:
+                    cancelled_downloads.discard(model_name)
+                    if model_name in download_statuses:
+                        download_statuses[model_name].update({
+                            "status": "cancelled",
+                            "error": None
+                        })
+                broadcast_event("download_progress", {
+                    "model_name": model_name,
+                    "status": "cancelled"
+                })
+                print(f"[Downloader] HF Download cancelled (saved partial files) for {model_name}")
+                return
+                
+            print(f"[Downloader] Error downloading HF model {model_name}: {e}")
             with download_lock:
                 if model_name in download_statuses:
                     download_statuses[model_name].update({
@@ -1105,7 +1686,6 @@ def run_download_thread(model_name: str):
             }
         return
 
-        
     info = DOWNLOAD_URLS[model_name]
     url = info["url"]
     dest_path = info["path"]
@@ -1117,100 +1697,9 @@ def run_download_thread(model_name: str):
     temp_path = dest_path + ".download"
     
     try:
-        with download_lock:
-            download_statuses[model_name] = {
-                "status": "downloading",
-                "progress": 0.0,
-                "downloaded_bytes": 0,
-                "total_bytes": 0,
-                "speed_mbps": 0.0,
-                "model_name": model_name,
-                "error": None
-            }
-            
-        print(f"[Downloader] Starting download from {url} to {dest_path}")
-        
-        req = urllib.request.Request(
-            url, 
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-        )
-        
-        with urllib.request.urlopen(req) as response:
-            total_size = int(response.headers.get('content-length', 0))
-            with download_lock:
-                if model_name in download_statuses:
-                    download_statuses[model_name]["total_bytes"] = total_size
-                
-            block_size = 1024 * 1024
-            downloaded = 0
-            start_time = time.time()
-            last_report_time = start_time
-            last_report_downloaded = 0
-            
-            with open(temp_path, 'wb') as out_file:
-                while True:
-                    buffer = response.read(block_size)
-                    if not buffer:
-                        break
-                    out_file.write(buffer)
-                    downloaded += len(buffer)
-                    
-                    current_time = time.time()
-                    if current_time - last_report_time >= 0.5:
-                        duration = current_time - last_report_time
-                        bytes_sent = downloaded - last_report_downloaded
-                        speed_mbps = round((bytes_sent * 8) / (1024 * 1024 * duration), 2)
-                        progress = round((downloaded / total_size) * 100, 2) if total_size > 0 else 0.0
-                        
-                        with download_lock:
-                            if model_name in download_statuses:
-                                download_statuses[model_name].update({
-                                    "progress": progress,
-                                    "downloaded_bytes": downloaded,
-                                    "speed_mbps": speed_mbps
-                                })
-                            
-                        broadcast_event("download_progress", {
-                            "model_name": model_name,
-                            "progress": progress,
-                            "speed_mbps": speed_mbps,
-                            "downloaded_bytes": downloaded,
-                            "total_bytes": total_size
-                        })
-                        
-                        last_report_time = current_time
-                        last_report_downloaded = downloaded
-                        
-            if os.path.exists(dest_path):
-                os.remove(dest_path)
-            os.rename(temp_path, dest_path)
-            
-            with download_lock:
-                if model_name in download_statuses:
-                    download_statuses[model_name].update({
-                        "status": "completed",
-                        "progress": 100.0,
-                        "downloaded_bytes": total_size,
-                        "speed_mbps": 0.0
-                    })
-            
-            broadcast_event("download_progress", {
-                "model_name": model_name,
-                "progress": 100.0,
-                "speed_mbps": 0.0,
-                "downloaded_bytes": total_size,
-                "total_bytes": total_size,
-                "status": "completed"
-            })
-            print(f"[Downloader] Completed download of {model_name}")
-            
+        download_gguf_parallel(url, dest_path, temp_path, model_name, num_connections=8)
     except Exception as e:
         print(f"[Downloader] Error downloading {model_name}: {e}")
-        if os.path.exists(temp_path):
-            try:
-                os.remove(temp_path)
-            except:
-                pass
         with download_lock:
             if model_name in download_statuses:
                 download_statuses[model_name].update({
@@ -1223,13 +1712,48 @@ def run_download_thread(model_name: str):
             "error": str(e)
         })
 
+
+
 @app.post("/api/models/download")
-def start_model_download(payload: DownloadPayload, background_tasks: BackgroundTasks):
+def start_model_download(payload: ModelDownloadPayload, background_tasks: BackgroundTasks):
     model_name = payload.model_name
+    restart = payload.restart
     with download_lock:
         if model_name in download_statuses and download_statuses[model_name]["status"] == "downloading":
             raise HTTPException(status_code=400, detail=f"Download for {model_name} is already in progress.")
         
+        # If restart is requested, delete any partial download files or folders first
+        if restart:
+            if model_name in DOWNLOAD_URLS:
+                info = DOWNLOAD_URLS[model_name]
+                temp_path = info["path"] + ".download"
+                if os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                        print(f"[Downloader] Removed partial file for restart: {temp_path}")
+                    except Exception as e:
+                        print(f"Failed to remove partial download file: {e}")
+            hf_repos = {
+                "whisperx:tiny": "Systran/faster-whisper-tiny",
+                "whisperx:base": "Systran/faster-whisper-base",
+                "whisperx:small": "Systran/faster-whisper-small",
+                "whisperx:medium": "Systran/faster-whisper-medium",
+                "whisperx:large-v3": "Systran/faster-whisper-large-v3",
+                "tts:qwen": "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice"
+            }
+            if model_name in hf_repos:
+                repo_id = hf_repos[model_name]
+                cache_dir = os.path.expanduser(os.path.join("~", ".cache", "huggingface", "hub"))
+                repo_folder = "models--" + repo_id.replace("/", "--")
+                repo_path = os.path.join(cache_dir, repo_folder)
+                if os.path.exists(repo_path):
+                    import shutil
+                    try:
+                        shutil.rmtree(repo_path)
+                        print(f"[Downloader] Removed partial HF folder for restart: {repo_path}")
+                    except Exception as e:
+                        print(f"Failed to remove HF partial download folder: {e}")
+                        
         # Initialize status for this model so that it immediately registers as downloading
         download_statuses[model_name] = {
             "status": "downloading",
@@ -1249,31 +1773,95 @@ def get_model_download_status():
     with download_lock:
         return download_statuses
 
+@app.post("/api/models/download/cancel")
+def cancel_model_download(payload: ModelDownloadPayload):
+    model_name = payload.model_name
+    global cancelled_downloads, download_statuses
+    with download_lock:
+        if model_name in download_statuses and download_statuses[model_name]["status"] == "downloading":
+            cancelled_downloads.add(model_name)
+            download_statuses[model_name]["status"] = "cancelled"
+            return {"status": "cancelling"}
+        else:
+            return {"status": "not_downloading"}
+
+
 _hf_download_cache = {}
 _hf_cache_time = 0.0
 
-def is_hf_repo_downloaded(repo_id: str) -> bool:
+def get_hf_repo_status(repo_id: str) -> dict:
     global _hf_cache_time
     now = time.time()
-    if repo_id in _hf_download_cache and (now - _hf_cache_time) < 10.0:
-        return _hf_download_cache[repo_id]
+    
+    cache_key = f"status_{repo_id}"
+    if cache_key in _hf_download_cache and (now - _hf_cache_time) < 2.0:
+        return _hf_download_cache[cache_key]
         
     try:
         import os
         cache_dir = os.path.expanduser(os.path.join("~", ".cache", "huggingface", "hub"))
         repo_folder = "models--" + repo_id.replace("/", "--")
         repo_path = os.path.join(cache_dir, repo_folder)
-        downloaded = False
-        if os.path.exists(repo_path):
-            snapshots_path = os.path.join(repo_path, "snapshots")
-            if os.path.exists(snapshots_path) and os.listdir(snapshots_path):
-                downloaded = True
-        _hf_download_cache[repo_id] = downloaded
+        
+        if not os.path.exists(repo_path):
+            res = {"downloaded": False, "partial": False}
+            _hf_download_cache[cache_key] = res
+            _hf_cache_time = now
+            return res
+            
+        snapshots_path = os.path.join(repo_path, "snapshots")
+        if not os.path.exists(snapshots_path) or not os.listdir(snapshots_path):
+            res = {"downloaded": False, "partial": False}
+            _hf_download_cache[cache_key] = res
+            _hf_cache_time = now
+            return res
+            
+        for snap in os.listdir(snapshots_path):
+            snap_dir = os.path.join(snapshots_path, snap)
+            if os.path.isdir(snap_dir):
+                marker = os.path.join(snap_dir, "download_complete.json")
+                if os.path.exists(marker):
+                    res = {"downloaded": True, "partial": False}
+                    _hf_download_cache[cache_key] = res
+                    _hf_cache_time = now
+                    return res
+                    
+        has_incomplete = False
+        has_weights = False
+        total_size = 0
+        for root, dirs, files in os.walk(repo_path):
+            for file in files:
+                if file.endswith(".incomplete"):
+                    has_incomplete = True
+                if file in ["model.bin", "model.safetensors"]:
+                    has_weights = True
+                total_size += os.path.getsize(os.path.join(root, file))
+        
+        if not has_incomplete and has_weights and total_size > 50 * 1024 * 1024:
+            for snap in os.listdir(snapshots_path):
+                snap_dir = os.path.join(snapshots_path, snap)
+                if os.path.isdir(snap_dir):
+                    marker = os.path.join(snap_dir, "download_complete.json")
+                    try:
+                        with open(marker, "w") as f:
+                            json.dump({"completed_at": time.time(), "total_bytes": total_size}, f)
+                    except:
+                        pass
+                    break
+            res = {"downloaded": True, "partial": False}
+        else:
+            has_files = any(any(not f.endswith(".lock") for f in files) for root, dirs, files in os.walk(repo_path))
+            res = {"downloaded": False, "partial": has_files}
+            
+        _hf_download_cache[cache_key] = res
         _hf_cache_time = now
-        return downloaded
+        return res
     except Exception:
         pass
-    return False
+    return {"downloaded": False, "partial": False}
+
+def is_hf_repo_downloaded(repo_id: str) -> bool:
+    return get_hf_repo_status(repo_id)["downloaded"]
 
 @app.get("/api/models")
 def get_models():
@@ -1285,13 +1873,23 @@ def get_models():
         files = {}
         if os.path.exists(directory):
             for f in os.listdir(directory):
-                if f.endswith(".gguf") and os.path.isfile(os.path.join(directory, f)):
-                    filepath = os.path.join(directory, f)
-                    try:
-                        size_gb = round(os.path.getsize(filepath) / (1024**3), 2)
-                    except:
-                        size_gb = 0.0
-                    files[f] = {"name": f, "size_gb": size_gb, "downloaded": True}
+                filepath = os.path.join(directory, f)
+                if os.path.isfile(filepath):
+                    if f.endswith(".gguf"):
+                        try:
+                            size_gb = round(os.path.getsize(filepath) / (1024**3), 2)
+                        except:
+                            size_gb = 0.0
+                        files[f] = {"name": f, "size_gb": size_gb, "downloaded": True, "partial": False}
+                    elif f.endswith(".gguf.download"):
+                        orig_name = f[:-9]
+                        try:
+                            size_bytes = os.path.getsize(filepath)
+                            size_gb = round(size_bytes / (1024**3), 2)
+                        except:
+                            size_bytes = 0
+                            size_gb = 0.0
+                        files[orig_name] = {"name": orig_name, "size_gb": size_gb, "downloaded": False, "partial": True}
         return files
 
     existing_main = get_existing_files(models_dir)
@@ -1300,15 +1898,15 @@ def get_models():
     
     incorporated = {
         "main": [
-            {"name": "Qwen3.5-4B-Q4_K_M.gguf", "size_gb": 2.55, "downloaded": False},
-            {"name": "Qwen3VL-2B-Instruct-Q4_K_M.gguf", "size_gb": 1.03, "downloaded": False}
+            {"name": "Qwen3.5-4B-Q4_K_M.gguf", "size_gb": 2.55, "downloaded": False, "partial": False},
+            {"name": "Qwen3VL-2B-Instruct-Q4_K_M.gguf", "size_gb": 1.03, "downloaded": False, "partial": False}
         ],
         "drafters": [
-            {"name": "Qwen3.5-0.8B-Q4_K_M.gguf", "size_gb": 0.50, "downloaded": False}
+            {"name": "Qwen3.5-0.8B-Q4_K_M.gguf", "size_gb": 0.50, "downloaded": False, "partial": False}
         ],
         "mmproj": [
-            {"name": "mmproj-Qwen3.5-4B-BF16.gguf", "size_gb": 0.63, "downloaded": False},
-            {"name": "mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf", "size_gb": 0.41, "downloaded": False}
+            {"name": "mmproj-Qwen3.5-4B-BF16.gguf", "size_gb": 0.63, "downloaded": False, "partial": False},
+            {"name": "mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf", "size_gb": 0.41, "downloaded": False, "partial": False}
         ]
     }
     
@@ -1318,7 +1916,8 @@ def get_models():
     
     for model in incorporated["main"]:
         if model["name"] in existing_main:
-            model["downloaded"] = True
+            model["downloaded"] = existing_main[model["name"]]["downloaded"]
+            model["partial"] = existing_main[model["name"]].get("partial", False)
             model["size_gb"] = existing_main[model["name"]]["size_gb"]
             del existing_main[model["name"]]
         final_main.append(model)
@@ -1327,7 +1926,8 @@ def get_models():
         
     for model in incorporated["drafters"]:
         if model["name"] in existing_drafters:
-            model["downloaded"] = True
+            model["downloaded"] = existing_drafters[model["name"]]["downloaded"]
+            model["partial"] = existing_drafters[model["name"]].get("partial", False)
             model["size_gb"] = existing_drafters[model["name"]]["size_gb"]
             del existing_drafters[model["name"]]
         final_drafters.append(model)
@@ -1336,23 +1936,33 @@ def get_models():
         
     for model in incorporated["mmproj"]:
         if model["name"] in existing_mmproj:
-            model["downloaded"] = True
+            model["downloaded"] = existing_mmproj[model["name"]]["downloaded"]
+            model["partial"] = existing_mmproj[model["name"]].get("partial", False)
             model["size_gb"] = existing_mmproj[model["name"]]["size_gb"]
             del existing_mmproj[model["name"]]
         final_mmproj.append(model)
     for model_name, model_info in existing_mmproj.items():
         final_mmproj.append(model_info)
         
+    def get_hf_model_info(name, repo_id, expected_gb):
+        status = get_hf_repo_status(repo_id)
+        return {
+            "name": name,
+            "size_gb": expected_gb,
+            "downloaded": status["downloaded"],
+            "partial": status["partial"]
+        }
+
     stt_models = [
-        {"name": "whisperx:tiny", "size_gb": 0.1, "downloaded": is_hf_repo_downloaded("Systran/faster-whisper-tiny")},
-        {"name": "whisperx:base", "size_gb": 0.25, "downloaded": is_hf_repo_downloaded("Systran/faster-whisper-base")},
-        {"name": "whisperx:small", "size_gb": 0.50, "downloaded": is_hf_repo_downloaded("Systran/faster-whisper-small")},
-        {"name": "whisperx:medium", "size_gb": 1.5, "downloaded": is_hf_repo_downloaded("Systran/faster-whisper-medium")},
-        {"name": "whisperx:large-v3", "size_gb": 3.0, "downloaded": is_hf_repo_downloaded("Systran/faster-whisper-large-v3")}
+        get_hf_model_info("whisperx:tiny", "Systran/faster-whisper-tiny", 0.1),
+        get_hf_model_info("whisperx:base", "Systran/faster-whisper-base", 0.25),
+        get_hf_model_info("whisperx:small", "Systran/faster-whisper-small", 0.50),
+        get_hf_model_info("whisperx:medium", "Systran/faster-whisper-medium", 1.5),
+        get_hf_model_info("whisperx:large-v3", "Systran/faster-whisper-large-v3", 3.0)
     ]
     
     tts_models = [
-        {"name": "tts:qwen", "size_gb": 1.2, "downloaded": is_hf_repo_downloaded("Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice")}
+        get_hf_model_info("tts:qwen", "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice", 1.2)
     ]
     
     s_dict = load_settings_dict()
@@ -1377,6 +1987,7 @@ def get_models():
         }
     }
 
+
 @app.post("/api/setup")
 def start_setup(payload: SetupPayload, background_tasks: BackgroundTasks):
     global is_setting_up
@@ -1392,10 +2003,18 @@ def get_setup_status():
 
 @app.post("/api/chat")
 def post_chat(payload: ChatPayload, background_tasks: BackgroundTasks):
-    global duplex_manager
+    global duplex_manager, active_session_id
     if not duplex_manager:
         raise HTTPException(status_code=400, detail="Duplex Manager not loaded. Please complete model setup first.")
     
+    target_session_id = payload.session_id or active_session_id
+    if not target_session_id:
+        sessions = load_sessions_list()
+        if sessions:
+            target_session_id = sessions[0].get("id")
+        else:
+            target_session_id = f"session_{int(time.time()*1000)}"
+            
     # Broadcast user's message to UI chat sessions
     msg_id = payload.msg_id or f"msg_{int(time.time()*1000)}"
     
@@ -1421,10 +2040,10 @@ def post_chat(payload: ChatPayload, background_tasks: BackgroundTasks):
         "attachments": broadcast_attachments,
         "type": "text", 
         "id": msg_id,
-        "session_id": payload.session_id
+        "session_id": target_session_id
     })
     
-    append_message_to_sessions(payload.session_id, "user", payload.message, msg_id, attachments_dict)
+    append_message_to_sessions(target_session_id, "user", payload.message, msg_id, attachments_dict)
     
     # Run pipeline in background thread
     background_tasks.add_task(
@@ -1432,7 +2051,7 @@ def post_chat(payload: ChatPayload, background_tasks: BackgroundTasks):
         payload.message, 
         payload.image, 
         payload.speech_enabled,
-        payload.session_id,
+        target_session_id,
         attachments_dict
     )
     return {"status": "message_received", "msg_id": msg_id}
@@ -1449,71 +2068,24 @@ def post_interrupt():
 
 @app.get("/api/resources")
 def get_resources():
-    # 1. CPU / RAM
-    cpu_usage = psutil.cpu_percent()
-    ram = psutil.virtual_memory()
-    ram_usage = ram.percent
-    ram_total = ram.total / (1024**3) # GB
-    ram_used = ram.used / (1024**3) # GB
-    
-    # 2. GPU / VRAM
-    gpu_usage = 0.0
-    vram_used = 0.0
-    vram_total = 0.0
-    
-    # Read from nvidia-smi on windows
-    nv_smi = shutil.which("nvidia-smi") or "C:\\Program Files\\NVIDIA Corporation\\NVSMI\\nvidia-smi.exe"
-    if os.path.exists(nv_smi) or shutil.which("nvidia-smi"):
+    global stt_engine, tts_engine, duplex_manager, is_remote_control_only
+    if cached_resources.get("vram", {}).get("total", 0.0) == 0.0:
         try:
-            res = subprocess.run(
-                ["nvidia-smi", "--query-gpu=utilization.gpu,memory.used,memory.total", "--format=csv,noheader,nounits"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                timeout=0.5
-            )
-            if res.returncode == 0:
-                parts = res.stdout.strip().split(",")
-                gpu_usage = float(parts[0].strip())
-                vram_used = float(parts[1].strip()) / 1024.0 # to GB
-                vram_total = float(parts[2].strip()) / 1024.0 # to GB
+            update_resource_stats_once()
         except:
             pass
-            
-    # Fallback to PyTorch memory check if cuda is loaded
-    if vram_total == 0.0 and torch.cuda.is_available():
-        try:
-            dev = torch.cuda.current_device()
-            free, total = torch.cuda.mem_get_info(dev)
-            vram_total = total / (1024**3)
-            vram_used = (total - free) / (1024**3)
-        except:
-            pass
-            
-    # 3. Context size (Turns in history)
+
     context_turns = 0
     if duplex_manager:
         with duplex_manager.history_lock:
             context_turns = sum(1 for m in duplex_manager.history if m.get("role") == "user")
             
-    return {
-        "cpu": cpu_usage,
-        "ram": {
-            "used": round(ram_used, 2),
-            "total": round(ram_total, 2),
-            "percent": ram_usage
-        },
-        "gpu": gpu_usage,
-        "vram": {
-            "used": round(vram_used, 2),
-            "total": round(vram_total, 2),
-            "percent": round((vram_used / vram_total * 100) if vram_total > 0 else 0, 1)
-        },
-        "context_turns": context_turns,
-        "stt_loaded": stt_engine is not None,
-        "tts_loaded": tts_engine is not None,
-        "models_loaded": (duplex_manager is not None) or is_remote_control_only
-    }
+    res = dict(cached_resources)
+    res["context_turns"] = context_turns
+    res["stt_loaded"] = stt_engine is not None
+    res["tts_loaded"] = tts_engine is not None
+    res["models_loaded"] = (duplex_manager is not None) or is_remote_control_only
+    return res
 
 @app.get("/api/config")
 def get_config():
@@ -1640,6 +2212,9 @@ def post_compress():
         if len(duplex_manager.history) > 8:
             duplex_manager.history = duplex_manager.history[-8:]
             
+    if active_session_id:
+        sync_session_history_to_persistence(active_session_id, prune_ui_messages=True)
+            
     import gc
     import torch
     if torch.cuda.is_available():
@@ -1652,6 +2227,7 @@ def post_compress():
     broadcast_log("SYSTEM", "Context compression executed successfully.")
     context_turns = sum(1 for m in duplex_manager.history if m.get("role") == "user")
     return {"status": "compressed", "context_turns": context_turns}
+
 
 @app.post("/api/voice")
 def set_voice(payload: dict):
@@ -1668,6 +2244,56 @@ def set_voice(payload: dict):
     broadcast_log("SYSTEM", f"Text-to-Speech voice speaker changed to: {speaker}")
     return {"status": "voice_changed"}
 
+@app.post("/api/voice/mute")
+def post_voice_mute(payload: dict):
+    global voice_input_muted
+    voice_input_muted = payload.get("muted", False)
+    broadcast_log("SYSTEM", f"Voice loop muted: {voice_input_muted}")
+    return {"status": "success", "muted": voice_input_muted}
+
+class SpeakPayload(BaseModel):
+    text: str
+
+@app.post("/api/voice/speak")
+def post_voice_speak(payload: SpeakPayload, background_tasks: BackgroundTasks):
+    global duplex_manager
+    if duplex_manager and duplex_manager.tts is not None:
+        def speak_task():
+            try:
+                # Interrupt current speech
+                duplex_manager.interrupt()
+                time.sleep(0.05)
+                
+                import uuid
+                req_id = str(uuid.uuid4())
+                duplex_manager.current_request_id = req_id
+                duplex_manager.interrupt_event.clear()
+                
+                from config.settings import model_cfg
+                speaker = getattr(model_cfg, "tts_speaker", "Aiden")
+                language = "English"
+                if speaker in ["Vivian", "Serena", "Uncle_Fu", "Dylan", "Eric"]:
+                    language = "Chinese"
+                elif speaker == "Ono_Anna":
+                    language = "Japanese"
+                elif speaker == "Sohee":
+                    language = "Korean"
+                
+                from src.llm.prompts import BUTLER_INSTRUCTION
+                wavs, sr = duplex_manager.tts.generate_custom_voice(
+                    text=payload.text,
+                    language=language,
+                    speaker=speaker,
+                    instruct=BUTLER_INSTRUCTION
+                )
+                duplex_manager.audio_queue.put((wavs[0], sr, 0, req_id))
+            except Exception as e:
+                print(f"[On-Demand TTS Error]: {e}")
+                
+        background_tasks.add_task(speak_task)
+        return {"status": "speaking"}
+    return {"status": "no_tts"}
+
 class SessionSwitchPayload(BaseModel):
     session_id: str
 
@@ -1677,50 +2303,62 @@ class SessionClearPayload(BaseModel):
 @app.get("/api/sessions")
 def get_sessions(client: str = "remote"):
     sessions = load_sessions_list()
-    if client == "desktop":
-        return sessions
-    else:
-        return [s for s in sessions if s.get("origin") == "remote"]
+    global active_session_id
+    if sessions and not active_session_id:
+        active_session_id = sessions[0].get("id")
+    return sessions
 
 @app.post("/api/sessions")
 def save_sessions(payload: List[dict]):
-    save_sessions_list(payload)
-    # Update in-memory session_histories
-    for s in payload:
-        s_id = s.get("id")
-        if s_id:
-            h = []
-            for m in s.get("messages", []):
-                h.append({
-                    "role": "user" if m.get("sender") == "user" else "assistant",
-                    "content": m.get("text", "")
-                })
-            session_histories[s_id] = h
-            if duplex_manager and duplex_manager.history is session_histories.get(s_id):
-                duplex_manager.history = h
-                
+    global session_histories, active_session_id
+    with chat_pipeline_lock:
+        save_sessions_list(payload)
+        
+        # Clean and rebuild session_histories from payload to prevent leaks and corruption
+        new_histories = {}
+        for s in payload:
+            s_id = s.get("id")
+            if s_id:
+                h = []
+                for m in s.get("messages", []):
+                    h.append({
+                        "role": "user" if m.get("sender") == "user" else "assistant",
+                        "content": m.get("text", "")
+                    })
+                new_histories[s_id] = h
+        session_histories = new_histories
+        
+        # Synchronize active_session_id only if it is not currently set
+        if payload and not active_session_id:
+            active_session_id = payload[0].get("id")
+            
+        # Re-sync duplex history if active
+        if active_session_id and duplex_manager:
+            duplex_manager.history = session_histories.get(active_session_id, [])
+            
     broadcast_event("sessions_updated", {})
     return {"status": "sessions_saved"}
 
 @app.post("/api/session/switch")
 def post_session_switch(payload: SessionSwitchPayload):
-    global duplex_manager, session_histories
-    session_id = payload.session_id
+    global active_session_id, duplex_manager, session_histories
+    active_session_id = payload.session_id
     if duplex_manager:
-        if session_id not in session_histories:
-            session_histories[session_id] = []
-        duplex_manager.history = session_histories[session_id]
-        broadcast_log("SYSTEM", f"Switched active backend context to session: {session_id}")
-    broadcast_event("session_switch", {"session_id": session_id})
-    return {"status": "switched", "session_id": session_id}
+        with duplex_manager.history_lock:
+            duplex_manager.history = session_histories.get(active_session_id, [])
+    broadcast_log("SYSTEM", f"Switched active session reference to: {active_session_id}")
+    broadcast_event("session_switch", {"session_id": active_session_id})
+    return {"status": "switched", "session_id": active_session_id}
+
 
 @app.post("/api/session/clear")
 def post_session_clear(payload: SessionClearPayload):
     global duplex_manager, session_histories
     session_id = payload.session_id
-    session_histories[session_id] = []
-    if duplex_manager and duplex_manager.history is session_histories.get(session_id):
-        duplex_manager.history = []
+    with chat_pipeline_lock:
+        session_histories[session_id] = []
+        if duplex_manager and duplex_manager.history is session_histories.get(session_id):
+            duplex_manager.history = []
     broadcast_log("SYSTEM", f"Cleared backend context for session: {session_id}")
     broadcast_event("session_clear", {"session_id": session_id})
     return {"status": "cleared", "session_id": session_id}
@@ -1835,11 +2473,12 @@ def check_remote_control_allowed(request: Optional[Request] = None):
         if is_local:
             return
     s_dict = load_settings_dict()
-    if not s_dict.get("sharing", {}).get("remote_control_enabled", True):
+    if not s_dict.get("sharing", {}).get("remote_control_enabled", False):
         raise HTTPException(status_code=403, detail="Remote control is disabled by the administrator.")
 
-class DownloadPayload(BaseModel):
+class RemoteDownloadPayload(BaseModel):
     paths: List[str]
+
 
 class ScreenActionPayload(BaseModel):
     action: str  # click, double_click, right_click, drag, type, press_key, move
@@ -1895,7 +2534,8 @@ def api_get_desktop_path(request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/remote-control/files/download")
-def api_download_files(request: Request, payload: DownloadPayload, background_tasks: BackgroundTasks):
+def api_download_files(request: Request, payload: RemoteDownloadPayload, background_tasks: BackgroundTasks):
+
     check_remote_control_allowed(request)
     if not payload.paths:
         raise HTTPException(status_code=400, detail="No files selected for download.")
@@ -2018,6 +2658,13 @@ def serve_static(file_path: str):
         return FileResponse(normalized_path, media_type=media_type)
         
     raise HTTPException(status_code=404, detail="File not found")
+
+# Startup initialization
+@app.on_event("startup")
+def startup_event():
+    import threading
+    monitor_thread = threading.Thread(target=resource_monitor_thread_fn, daemon=True)
+    monitor_thread.start()
 
 # Shutdown cleanup
 @app.on_event("shutdown")

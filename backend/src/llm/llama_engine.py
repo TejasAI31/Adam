@@ -54,7 +54,7 @@ class LlamaServerClient:
                     self.base_url,
                     json=payload,
                     headers={"Content-Type": "application/json"},
-                    timeout=self.timeout
+                    timeout=(10.0, 300.0)
                 )
                 r.raise_for_status()
                 return r.json()
@@ -67,25 +67,27 @@ class LlamaServerClient:
                     headers={"Content-Type": "application/json"},
                     method="POST",
                 )
-                with urllib.request.urlopen(req, timeout=self.timeout) as response:
+                with urllib.request.urlopen(req, timeout=300.0) as response:
                     result = json.loads(response.read().decode("utf-8"))
                     return result
 
         # Handle SSE Streaming response using requests for unbuffered real-time output
         def stream_generator():
             import requests
+            import codecs
+            decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
             try:
                 r = requests.post(
                     self.base_url,
                     json=payload,
                     headers={"Content-Type": "application/json"},
                     stream=True,
-                    timeout=self.timeout
+                    timeout=(10.0, 300.0)
                 )
                 r.raise_for_status()
-                for line in r.iter_lines(decode_unicode=True):
-                    if line:
-                        line = line.strip()
+                for raw_line in r.iter_lines(decode_unicode=False):
+                    if raw_line:
+                        line = decoder.decode(raw_line).strip()
                         if line.startswith("data: "):
                             data_str = line[6:]
                             if data_str == "[DONE]":
@@ -105,9 +107,9 @@ class LlamaServerClient:
                         headers={"Content-Type": "application/json"},
                         method="POST",
                     )
-                    response = urllib.request.urlopen(req, timeout=self.timeout)
-                    for line in response:
-                        line = line.decode("utf-8").strip()
+                    response = urllib.request.urlopen(req, timeout=300.0)
+                    for raw_line in response:
+                        line = decoder.decode(raw_line).strip()
                         if line.startswith("data: "):
                             data_str = line[6:]
                             if data_str == "[DONE]":

@@ -10,8 +10,15 @@ def setup_dll_directories():
             if base_dir and os.path.exists(base_dir):
                 try:
                     os.add_dll_directory(base_dir)
-                    # Also prepend to PATH so child processes (like WhisperX calling ffmpeg.exe) can find them
+                    # Prepend base_dir to PATH
                     os.environ["PATH"] = base_dir + os.pathsep + os.environ.get("PATH", "")
+                    
+                    # Also register torch/lib DLL directory to allow ctranslate2/faster-whisper
+                    # and torch submodules to locate PyTorch's bundled CUDA libraries
+                    torch_lib = os.path.join(base_dir, "torch", "lib")
+                    if os.path.exists(torch_lib):
+                        os.add_dll_directory(torch_lib)
+                        os.environ["PATH"] = torch_lib + os.pathsep + os.environ.get("PATH", "")
                 except Exception as e:
                     print(f"[DLL SETUP] Error adding _MEIPASS directory: {e}")
         else:

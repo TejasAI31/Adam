@@ -2,9 +2,6 @@
 import os
 import sys
 
-# Crucial: Disable Hugging Face lazy loading so PyInstaller compiled imports resolve eagerly
-os.environ["TRANSFORMERS_NO_LAZY_LOADING"] = "1"
-
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="pyannote")
 warnings.filterwarnings("ignore", category=UserWarning, module="torchcodec")
@@ -16,20 +13,22 @@ if getattr(sys, 'frozen', False):
 import src.utils.dll_setup
 
 # Explicit eager imports of lazy-loaded transformers/pyannote submodules to ensure PyInstaller bundles them
-try:
-    import transformers.pipelines
-    import transformers.models.auto
-    import transformers.models.auto.processing_auto
-    from transformers import pipeline, AutoProcessor
-except ImportError:
-    pass
+def _pyinstaller_eager_imports():
+    try:
+        import transformers.pipelines
+        import transformers.models.auto
+        import transformers.models.auto.processing_auto
+        from transformers import pipeline, AutoProcessor
+    except ImportError:
+        pass
 
-try:
-    import pyannote.pipeline
-    import pyannote.audio.core.pipeline
-    from pyannote.audio import Pipeline as PyannotePipeline
-except ImportError:
-    pass
+    try:
+        import pyannote.pipeline
+        import pyannote.audio.core.pipeline
+        from pyannote.audio import Pipeline as PyannotePipeline
+    except ImportError:
+        pass
+
 
 import logging
 import os

@@ -74,10 +74,10 @@ document.addEventListener('DOMContentLoaded', () => {
         await fetchSystemResources();
         setupInterface(data);
       } else {
-        setTimeout(checkBackendOnline, 1000);
+        setTimeout(checkBackendOnline, 200);
       }
     } catch (e) {
-      setTimeout(checkBackendOnline, 1000);
+      setTimeout(checkBackendOnline, 200);
     }
   }
 
@@ -107,6 +107,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function getModelFamily(filename) {
     const name = filename.toLowerCase();
+    if (name.includes('qwen3vl') || name.includes('qwen3-vl')) return 'qwen3vl';
+    if (name.includes('qwen3.5')) return 'qwen3.5';
     if (name.includes('qwen')) return 'qwen';
     if (name.includes('llama')) return 'llama';
     if (name.includes('gemma')) return 'gemma';
@@ -114,6 +116,56 @@ document.addEventListener('DOMContentLoaded', () => {
     if (name.includes('mistral')) return 'mistral';
     const match = filename.match(/^([a-zA-Z0-9]+)/);
     return match ? match[1].toLowerCase() : 'unknown';
+  }
+
+  function getModelFriendlyDescription(modelName) {
+    const nameLower = modelName.toLowerCase();
+    if (nameLower.includes('qwen3.5-4b')) {
+      return "Highly intelligent assistant with deep general knowledge. Recommended for most systems.";
+    }
+    if (nameLower.includes('qwen3vl-2b')) {
+      return "Lightweight vision assistant capable of reading and understanding uploaded images.";
+    }
+    if (nameLower.includes('qwen3.5-0.8b')) {
+      return "Draft model. Enables speculative decoding to write text up to 2x faster.";
+    }
+    if (nameLower.includes('mmproj-qwen3.5-4b')) {
+      return "Image vision processor required for the 4B main model to see images.";
+    }
+    if (nameLower.includes('mmproj-qwen3vl-2b')) {
+      return "Image vision processor required for the 2B main model to see images.";
+    }
+    return "Custom supplementary pipeline model.";
+  }
+
+  function getModelSpecs(filename) {
+    let quant = '';
+    const qMatch = filename.match(/(q[0-9]_[a-zA-Z0-9_]+|f16|f32|q[0-9]_k_m|q[0-9]_k_s|q[0-9]_0|q[0-9]_1)/i);
+    if (qMatch) {
+      quant = qMatch[1].toUpperCase();
+    } else if (filename.toLowerCase().includes('gguf')) {
+      const parts = filename.split(/[-_]/);
+      const qPart = parts.find(p => p.toLowerCase().startsWith('q') && p.length <= 6 && /\d/.test(p));
+      if (qPart) quant = qPart.toUpperCase();
+    }
+    
+    let arch = 'GGUF';
+    const nameLower = filename.toLowerCase();
+    if (nameLower.includes('qwen')) arch = 'Qwen';
+    else if (nameLower.includes('llama')) arch = 'Llama';
+    else if (nameLower.includes('gemma')) arch = 'Gemma';
+    else if (nameLower.includes('phi')) arch = 'Phi';
+    else if (nameLower.includes('mistral')) arch = 'Mistral';
+    
+    let cleanName = filename.replace(/\.gguf$/i, '')
+                            .replace(new RegExp(`[-_]${quant}`, 'i'), '');
+    
+    return {
+      quant: quant || 'Q4_0',
+      arch: arch,
+      cleanName: cleanName,
+      description: getModelFriendlyDescription(filename)
+    };
   }
 
   function setupInterface(data) {
@@ -138,6 +190,243 @@ document.addEventListener('DOMContentLoaded', () => {
     renderDraftModels();
     renderVisionAdapters();
     renderSttTtsStatus();
+
+    // Bind VRAM presets
+    const presetCpu = document.getElementById('preset-cpu');
+    const presetLow = document.getElementById('preset-low');
+    const presetMedium = document.getElementById('preset-medium');
+    const presetHigh = document.getElementById('preset-high');
+    const suboptContainer = document.getElementById('vram-suboption-container');
+    const btnPerf = document.getElementById('subopt-performance');
+    const btnVers = document.getElementById('subopt-versatility');
+
+    let activePreset = 'high';
+    let activeSuboption = 'performance';
+
+    const updatePresetButtonsUI = (selected) => {
+      [presetCpu, presetLow, presetMedium, presetHigh].forEach(btn => {
+        if (!btn) return;
+        btn.style.borderColor = 'var(--border-translucent)';
+        btn.style.background = 'rgba(0,0,0,0.3)';
+        btn.style.boxShadow = 'none';
+      });
+      
+      let activeBtn = null;
+      if (selected === 'cpu') activeBtn = presetCpu;
+      else if (selected === 'low') activeBtn = presetLow;
+      else if (selected === 'medium') activeBtn = presetMedium;
+      else if (selected === 'high') activeBtn = presetHigh;
+      
+      if (activeBtn) {
+        activeBtn.style.borderColor = 'var(--accent-sky)';
+        activeBtn.style.background = 'rgba(56, 189, 248, 0.1)';
+        activeBtn.style.boxShadow = '0 0 10px rgba(56, 189, 248, 0.2)';
+      }
+      
+      if (suboptContainer) {
+        if (selected === 'medium' || selected === 'high') {
+          suboptContainer.style.display = 'flex';
+        } else {
+          suboptContainer.style.display = 'none';
+        }
+      }
+    };
+
+    const updateVramSuboptionUI = (activeSub) => {
+      if (btnPerf && btnVers) {
+        if (activeSub === 'performance') {
+          btnPerf.style.borderColor = 'var(--accent-sky)';
+          btnPerf.style.background = 'rgba(56, 189, 248, 0.1)';
+          btnPerf.style.color = 'var(--text-main)';
+          btnPerf.style.fontWeight = '700';
+          
+          btnVers.style.borderColor = 'var(--border-translucent)';
+          btnVers.style.background = 'rgba(0,0,0,0.3)';
+          btnVers.style.color = 'var(--text-dim)';
+          btnVers.style.fontWeight = '400';
+        } else {
+          btnVers.style.borderColor = 'var(--accent-sky)';
+          btnVers.style.background = 'rgba(56, 189, 248, 0.1)';
+          btnVers.style.color = 'var(--text-main)';
+          btnVers.style.fontWeight = '700';
+          
+          btnPerf.style.borderColor = 'var(--border-translucent)';
+          btnPerf.style.background = 'rgba(0,0,0,0.3)';
+          btnPerf.style.color = 'var(--text-dim)';
+          btnPerf.style.fontWeight = '400';
+        }
+      }
+    };
+
+    const applyPresetCombination = (preset, suboption) => {
+      const hasGPU = systemResources.vram.total > 0;
+      
+      if (preset === 'cpu') {
+        // CPU Only Performance Mode
+        selectedConfig.main_model = "Qwen3VL-2B-Instruct-Q4_K_M.gguf";
+        selectedConfig.draft_model = null;
+        selectedConfig.mmproj_model = "mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf";
+        
+        selectedConfig.main_device = "cpu";
+        selectedConfig.draft_device = "cpu";
+        selectedConfig.mmproj_device = "cpu";
+        selectedConfig.stt_device = "cpu";
+        selectedConfig.tts_device = "gpu"; // Qwen TTS has no CPU version, but it is disabled here
+        
+        selectedConfig.stt_enabled = true;
+        selectedConfig.tts_enabled = false;
+        selectedConfig.stt_model_size = "base";
+        
+        sttModelSizeSelect.value = "base";
+        sttEnabledCheckbox.checked = true;
+        ttsEnabledCheckbox.checked = false;
+        
+        toggleServiceCardState('stt', true);
+        toggleServiceCardState('tts', false);
+      }
+      else if (preset === 'low') {
+        // Low VRAM (4GB) Performance Mode
+        selectedConfig.main_model = "Qwen3.5-4B-Q4_K_M.gguf";
+        selectedConfig.draft_model = null;
+        selectedConfig.mmproj_model = "mmproj-Qwen3.5-4B-BF16.gguf";
+        
+        selectedConfig.main_device = hasGPU ? "gpu" : "cpu";
+        selectedConfig.draft_device = "cpu";
+        selectedConfig.mmproj_device = hasGPU ? "gpu" : "cpu";
+        selectedConfig.stt_device = "cpu"; // WhisperX Small -> CPU
+        selectedConfig.tts_device = "gpu";
+        
+        selectedConfig.stt_enabled = true;
+        selectedConfig.tts_enabled = false;
+        selectedConfig.stt_model_size = "small";
+        
+        sttModelSizeSelect.value = "small";
+        sttEnabledCheckbox.checked = true;
+        ttsEnabledCheckbox.checked = false;
+        
+        toggleServiceCardState('stt', true);
+        toggleServiceCardState('tts', false);
+      }
+      else if (preset === 'medium') {
+        // Medium VRAM (6GB)
+        selectedConfig.main_model = "Qwen3.5-4B-Q4_K_M.gguf";
+        selectedConfig.mmproj_model = "mmproj-Qwen3.5-4B-BF16.gguf";
+        
+        selectedConfig.main_device = hasGPU ? "gpu" : "cpu";
+        selectedConfig.mmproj_device = hasGPU ? "gpu" : "cpu";
+        selectedConfig.stt_device = "cpu"; // WhisperX Small -> CPU
+        selectedConfig.tts_device = "gpu";
+        
+        selectedConfig.stt_enabled = true;
+        selectedConfig.stt_model_size = "small";
+        sttModelSizeSelect.value = "small";
+        sttEnabledCheckbox.checked = true;
+        toggleServiceCardState('stt', true);
+        
+        if (suboption === 'performance') {
+          selectedConfig.draft_model = "Qwen3.5-0.8B-Q4_K_M.gguf";
+          selectedConfig.draft_device = hasGPU ? "gpu" : "cpu";
+          selectedConfig.tts_enabled = false;
+          ttsEnabledCheckbox.checked = false;
+          toggleServiceCardState('tts', false);
+        } else {
+          // Versatility Mode
+          selectedConfig.draft_model = null;
+          selectedConfig.draft_device = "cpu";
+          selectedConfig.tts_enabled = true;
+          ttsEnabledCheckbox.checked = true;
+          toggleServiceCardState('tts', true);
+        }
+      }
+      else if (preset === 'high') {
+        // High VRAM (8GB+)
+        selectedConfig.main_model = "Qwen3.5-4B-Q4_K_M.gguf";
+        selectedConfig.draft_model = "Qwen3.5-0.8B-Q4_K_M.gguf";
+        selectedConfig.mmproj_model = "mmproj-Qwen3.5-4B-BF16.gguf";
+        
+        selectedConfig.main_device = hasGPU ? "gpu" : "cpu";
+        selectedConfig.draft_device = hasGPU ? "gpu" : "cpu";
+        selectedConfig.mmproj_device = hasGPU ? "gpu" : "cpu";
+        selectedConfig.stt_device = hasGPU ? "gpu" : "cpu";
+        selectedConfig.tts_device = "gpu";
+        
+        selectedConfig.stt_enabled = true;
+        toggleServiceCardState('stt', true);
+        sttEnabledCheckbox.checked = true;
+        
+        if (suboption === 'performance') {
+          selectedConfig.stt_model_size = "medium";
+          sttModelSizeSelect.value = "medium";
+          selectedConfig.tts_enabled = false;
+          ttsEnabledCheckbox.checked = false;
+          toggleServiceCardState('tts', false);
+        } else {
+          // Versatility Mode
+          selectedConfig.stt_model_size = "small";
+          sttModelSizeSelect.value = "small";
+          selectedConfig.tts_enabled = true;
+          ttsEnabledCheckbox.checked = true;
+          toggleServiceCardState('tts', true);
+        }
+      }
+      
+      // Update UI components
+      renderMainModels();
+      renderDraftModels();
+      renderVisionAdapters();
+      renderSttTtsStatus();
+      updateServiceLabels();
+      updateResourceMeters();
+    };
+
+    if (presetCpu) {
+      presetCpu.addEventListener('click', () => {
+        activePreset = 'cpu';
+        updatePresetButtonsUI('cpu');
+        applyPresetCombination(activePreset, activeSuboption);
+      });
+    }
+    if (presetLow) {
+      presetLow.addEventListener('click', () => {
+        activePreset = 'low';
+        updatePresetButtonsUI('low');
+        applyPresetCombination(activePreset, activeSuboption);
+      });
+    }
+    if (presetMedium) {
+      presetMedium.addEventListener('click', () => {
+        activePreset = 'medium';
+        updatePresetButtonsUI('medium');
+        applyPresetCombination(activePreset, activeSuboption);
+      });
+    }
+    if (presetHigh) {
+      presetHigh.addEventListener('click', () => {
+        activePreset = 'high';
+        updatePresetButtonsUI('high');
+        applyPresetCombination(activePreset, activeSuboption);
+      });
+    }
+    
+    if (btnPerf) {
+      btnPerf.addEventListener('click', () => {
+        activeSuboption = 'performance';
+        updateVramSuboptionUI('performance');
+        applyPresetCombination(activePreset, activeSuboption);
+      });
+    }
+    if (btnVers) {
+      btnVers.addEventListener('click', () => {
+        activeSuboption = 'versatility';
+        updateVramSuboptionUI('versatility');
+        applyPresetCombination(activePreset, activeSuboption);
+      });
+    }
+
+    // Set initial active state visual styles
+    updatePresetButtonsUI(activePreset);
+    updateVramSuboptionUI(activeSuboption);
+    applyPresetCombination(activePreset, activeSuboption);
     
     // Bind service pipelines (Whisper and TTS)
     sttEnabledCheckbox.addEventListener('change', () => {
@@ -227,14 +516,27 @@ document.addEventListener('DOMContentLoaded', () => {
       const sttModel = sttDatabase.find(m => m.name === `whisperx:${size}`);
       if (sttModel && !sttModel.downloaded) {
         const safeId = `whisperx_${size}`;
-        sttDownloadRight.innerHTML = `
-          <div id="download-container-${safeId}">
-            <button class="glow-btn download-btn" data-model="whisperx:${size}" style="padding: 4px 8px; font-size: 11px; cursor: pointer; border-radius: 4px;">Download</button>
-          </div>
-        `;
+        if (sttModel.partial === true) {
+          sttDownloadRight.innerHTML = `
+            <div id="download-container-${safeId}" style="display: flex; gap: 6px; align-items: center;">
+              <button class="glow-btn download-btn resume-btn" data-model="whisperx:${size}" style="padding: 4px 8px; font-size: 11px; cursor: pointer; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px; background: rgba(56, 189, 248, 0.15); border-color: rgba(56, 189, 248, 0.4); color: var(--accent-sky);">Resume</button>
+              <button class="glow-btn restart-btn" data-model="whisperx:${size}" style="padding: 4px 8px; font-size: 11px; cursor: pointer; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px; background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.3); color: var(--accent-red, #ef4444);">Restart</button>
+            </div>
+          `;
+          sttDownloadRight.querySelector('.restart-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            startDownload(`whisperx:${size}`, true);
+          });
+        } else {
+          sttDownloadRight.innerHTML = `
+            <div id="download-container-${safeId}">
+              <button class="glow-btn download-btn" data-model="whisperx:${size}" style="padding: 4px 8px; font-size: 11px; cursor: pointer; border-radius: 4px;">Download</button>
+            </div>
+          `;
+        }
         sttDownloadRight.querySelector('.download-btn').addEventListener('click', (e) => {
           e.stopPropagation();
-          startDownload(`whisperx:${size}`);
+          startDownload(`whisperx:${size}`, false);
         });
       } else {
         const hasGPU = systemResources.vram.total > 0;
@@ -264,38 +566,38 @@ document.addEventListener('DOMContentLoaded', () => {
       const ttsModel = ttsDatabase.find(m => m.name === `tts:qwen`);
       if (ttsModel && !ttsModel.downloaded) {
         const safeId = `tts_qwen`;
-        ttsDownloadRight.innerHTML = `
-          <div id="download-container-${safeId}">
-            <button class="glow-btn download-btn" data-model="tts:qwen" style="padding: 4px 8px; font-size: 11px; cursor: pointer; border-radius: 4px;">Download</button>
-          </div>
-        `;
+        if (ttsModel.partial === true) {
+          ttsDownloadRight.innerHTML = `
+            <div id="download-container-${safeId}" style="display: flex; gap: 6px; align-items: center;">
+              <button class="glow-btn download-btn resume-btn" data-model="tts:qwen" style="padding: 4px 8px; font-size: 11px; cursor: pointer; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px; background: rgba(56, 189, 248, 0.15); border-color: rgba(56, 189, 248, 0.4); color: var(--accent-sky);">Resume</button>
+              <button class="glow-btn restart-btn" data-model="tts:qwen" style="padding: 4px 8px; font-size: 11px; cursor: pointer; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px; background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.3); color: var(--accent-red, #ef4444);">Restart</button>
+            </div>
+          `;
+          ttsDownloadRight.querySelector('.restart-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            startDownload(`tts:qwen`, true);
+          });
+        } else {
+          ttsDownloadRight.innerHTML = `
+            <div id="download-container-${safeId}">
+              <button class="glow-btn download-btn" data-model="tts:qwen" style="padding: 4px 8px; font-size: 11px; cursor: pointer; border-radius: 4px;">Download</button>
+            </div>
+          `;
+        }
         ttsDownloadRight.querySelector('.download-btn').addEventListener('click', (e) => {
           e.stopPropagation();
-          startDownload(`tts:qwen`);
+          startDownload(`tts:qwen`, false);
         });
       } else {
-        const hasGPU = systemResources.vram.total > 0;
-        const deviceChecked = selectedConfig.tts_device === 'gpu' && hasGPU;
+        selectedConfig.tts_device = 'gpu';
         ttsDownloadRight.innerHTML = `
-          <span class="device-toggle-label" id="tts-device-label">${deviceChecked ? 'GPU' : 'CPU'}</span>
-          <label class="switch">
-            <input type="checkbox" id="tts-device-switch" ${deviceChecked ? 'checked' : ''} ${(!hasGPU || !selectedConfig.tts_enabled) ? 'disabled' : ''} class="device-switch">
-            <span class="slider"></span>
-          </label>
+          <span class="badge badge-quant" style="background: rgba(56, 189, 248, 0.15); color: var(--accent-sky); font-weight: bold; border: 1px solid rgba(56, 189, 248, 0.3); padding: 4px 8px; border-radius: 4px;">GPU Only</span>
         `;
-        const sw = document.getElementById('tts-device-switch');
-        const lbl = document.getElementById('tts-device-label');
-        if (sw) {
-          sw.addEventListener('change', () => {
-            lbl.textContent = sw.checked ? 'GPU' : 'CPU';
-            selectedConfig.tts_device = sw.checked ? 'gpu' : 'cpu';
-            updateResourceMeters();
-          });
-        }
       }
     }
     restoreActiveDownloadsUI();
   }
+
 
   // CPU/GPU switches should only be available for selected models
   function updateDeviceSwitchStates() {
@@ -340,48 +642,65 @@ document.addEventListener('DOMContentLoaded', () => {
       card.className = `model-card ${isSelected ? 'selected' : ''}`;
       card.id = `card-main-${model.name.replace(/\./g, '_')}`;
       
-      if (model.downloaded === false) {
-        card.innerHTML = `
-          <div class="card-left" style="opacity: 0.7;">
-            <span style="font-size: 14px; margin-right: 6px; user-select: none;">☁️</span>
-            <span class="card-name" title="${model.name}">${model.name}</span>
-            <span class="card-meta">${model.size_gb.toFixed(2)} GB</span>
-          </div>
-          <div class="card-right" id="download-container-${model.name.replace(/\./g, '_')}">
-            <button class="glow-btn download-btn" style="padding: 4px 8px; font-size: 11px; cursor: pointer; border-radius: 4px;">Download</button>
-          </div>
-        `;
-        
-        const btn = card.querySelector('.download-btn');
-        btn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          startDownload(model.name);
-        });
-        
-        mainList.appendChild(card);
-        return;
-      }
-      
+      const specs = getModelSpecs(model.name);
       const hasGPU = systemResources.vram.total > 0;
       const deviceChecked = isSelected ? (selectedConfig.main_device === 'gpu' && hasGPU) : hasGPU;
+      
+      let rightContent = '';
+      if (model.downloaded === false) {
+        const safeId = model.name.replace(/\./g, '_').replace(/:/g, '_');
+        if (model.partial === true) {
+          rightContent = `
+            <div class="card-right" id="download-container-${safeId}" style="display: flex; gap: 6px; align-items: center;">
+              <button class="glow-btn download-btn resume-btn" style="padding: 4px 8px; font-size: 11px; cursor: pointer; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px; background: rgba(56, 189, 248, 0.15); border-color: rgba(56, 189, 248, 0.4); color: var(--accent-sky);">
+                Resume
+              </button>
+              <button class="glow-btn restart-btn" style="padding: 4px 8px; font-size: 11px; cursor: pointer; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px; background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.3); color: var(--accent-red, #ef4444);">
+                Restart
+              </button>
+            </div>
+          `;
+        } else {
+          rightContent = `
+            <div class="card-right" id="download-container-${safeId}">
+              <button class="glow-btn download-btn" style="padding: 4px 10px; font-size: 11px; cursor: pointer; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;">
+                <svg style="width: 11px; height: 11px;" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"></path>
+                </svg>
+                Download
+              </button>
+            </div>
+          `;
+        }
+      } else {
+        rightContent = `
+          <div class="card-right">
+            <span class="device-toggle-label">${deviceChecked ? 'GPU' : 'CPU'}</span>
+            <label class="switch">
+              <input type="checkbox" class="device-switch" ${deviceChecked ? 'checked' : ''} ${(!hasGPU || !isSelected) ? 'disabled' : ''}>
+              <span class="slider"></span>
+            </label>
+          </div>
+        `;
+      }
 
       card.innerHTML = `
         <div class="card-left">
           <input type="radio" name="main-model-radio" class="card-checkbox" ${isSelected ? 'checked' : ''}>
-          <span class="card-name" title="${model.name}">${model.name}</span>
-          <span class="card-meta">${model.size_gb.toFixed(2)} GB</span>
+          <div style="display: flex; flex-direction: column; gap: 2px;">
+            <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+              <span class="card-name" title="${model.name}">${specs.cleanName}</span>
+              <span class="badge badge-arch">${specs.arch}</span>
+              <span class="badge badge-quant">${specs.quant}</span>
+              <span class="badge badge-size">${model.size_gb.toFixed(2)} GB</span>
+            </div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px; line-height: 1.3;">${specs.description}</div>
+          </div>
         </div>
-        <div class="card-right">
-          <span class="device-toggle-label">${deviceChecked ? 'GPU' : 'CPU'}</span>
-          <label class="switch">
-            <input type="checkbox" class="device-switch" ${deviceChecked ? 'checked' : ''} ${(!hasGPU || !isSelected) ? 'disabled' : ''}>
-            <span class="slider"></span>
-          </label>
-        </div>
+        ${rightContent}
       `;
 
       const radio = card.querySelector('.card-checkbox');
-      
       const selectAction = () => {
         selectedConfig.main_model = model.name;
         document.querySelectorAll('#main-located-list .model-card').forEach(c => c.classList.remove('selected'));
@@ -399,10 +718,12 @@ document.addEventListener('DOMContentLoaded', () => {
       };
       
       card.addEventListener('click', (e) => {
-        if (e.target.closest('.switch') || e.target.closest('.device-switch')) return;
-        if (e.target !== radio) {
-          radio.checked = true;
-        }
+        if (e.target.closest('.switch') || e.target.closest('.device-switch') || e.target.closest('.download-btn') || e.target.closest('.restart-btn')) return;
+        selectAction();
+      });
+
+      radio.addEventListener('click', (e) => {
+        e.stopPropagation();
         selectAction();
       });
 
@@ -415,6 +736,22 @@ document.addEventListener('DOMContentLoaded', () => {
             selectedConfig.main_device = devSwitch.checked ? 'gpu' : 'cpu';
           }
           updateResourceMeters();
+        });
+      }
+
+      const downloadBtn = card.querySelector('.download-btn');
+      if (downloadBtn) {
+        downloadBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          startDownload(model.name, false);
+        });
+      }
+
+      const restartBtn = card.querySelector('.restart-btn');
+      if (restartBtn) {
+        restartBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          startDownload(model.name, true);
         });
       }
 
@@ -438,45 +775,63 @@ document.addEventListener('DOMContentLoaded', () => {
       card.className = `model-card ${isSelected ? 'selected' : ''}`;
       card.id = `card-draft-${model.name.replace(/\./g, '_')}`;
       
-      if (model.downloaded === false) {
-        card.innerHTML = `
-          <div class="card-left" style="opacity: 0.7;">
-            <span style="font-size: 14px; margin-right: 6px; user-select: none;">☁️</span>
-            <span class="card-name" title="${model.name}">${model.name}</span>
-            <span class="card-meta">${model.size_gb.toFixed(2)} GB</span>
-          </div>
-          <div class="card-right" id="download-container-${model.name.replace(/\./g, '_')}">
-            <button class="glow-btn download-btn" style="padding: 4px 8px; font-size: 11px; cursor: pointer; border-radius: 4px;">Download</button>
-          </div>
-        `;
-        
-        const btn = card.querySelector('.download-btn');
-        btn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          startDownload(model.name);
-        });
-        
-        draftList.appendChild(card);
-        return;
-      }
-      
+      const specs = getModelSpecs(model.name);
       const hasGPU = systemResources.vram.total > 0;
       const deviceChecked = isSelected ? (selectedConfig.draft_device === 'gpu' && hasGPU) : hasGPU;
+      
+      let rightContent = '';
+      if (model.downloaded === false) {
+        const safeId = model.name.replace(/\./g, '_').replace(/:/g, '_');
+        if (model.partial === true) {
+          rightContent = `
+            <div class="card-right" id="download-container-${safeId}" style="display: flex; gap: 6px; align-items: center;">
+              <button class="glow-btn download-btn resume-btn" style="padding: 4px 8px; font-size: 11px; cursor: pointer; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px; background: rgba(56, 189, 248, 0.15); border-color: rgba(56, 189, 248, 0.4); color: var(--accent-sky);">
+                Resume
+              </button>
+              <button class="glow-btn restart-btn" style="padding: 4px 8px; font-size: 11px; cursor: pointer; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px; background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.3); color: var(--accent-red, #ef4444);">
+                Restart
+              </button>
+            </div>
+          `;
+        } else {
+          rightContent = `
+            <div class="card-right" id="download-container-${safeId}">
+              <button class="glow-btn download-btn" style="padding: 4px 10px; font-size: 11px; cursor: pointer; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;">
+                <svg style="width: 11px; height: 11px;" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"></path>
+                </svg>
+                Download
+              </button>
+            </div>
+          `;
+        }
+      } else {
+        rightContent = `
+          <div class="card-right">
+            <span class="device-toggle-label">${deviceChecked ? 'GPU' : 'CPU'}</span>
+            <label class="switch">
+              <input type="checkbox" class="device-switch" ${deviceChecked ? 'checked' : ''} ${(!hasGPU || !isSelected) ? 'disabled' : ''}>
+              <span class="slider"></span>
+            </label>
+          </div>
+        `;
+      }
 
       card.innerHTML = `
         <div class="card-left">
           <input type="checkbox" class="card-checkbox" ${isSelected ? 'checked' : ''}>
-          <span class="card-name" title="${model.name}">${model.name}</span>
-          <span class="card-meta">${model.size_gb.toFixed(2)} GB</span>
-          <span class="family-warning" style="display: none;"></span>
+          <div style="display: flex; flex-direction: column; gap: 2px;">
+            <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+              <span class="card-name" title="${model.name}">${specs.cleanName}</span>
+              <span class="badge badge-arch">${specs.arch}</span>
+              <span class="badge badge-quant">${specs.quant}</span>
+              <span class="badge badge-size">${model.size_gb.toFixed(2)} GB</span>
+            </div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px; line-height: 1.3;">${specs.description}</div>
+            <span class="family-warning" style="display: none;"></span>
+          </div>
         </div>
-        <div class="card-right">
-          <span class="device-toggle-label">${deviceChecked ? 'GPU' : 'CPU'}</span>
-          <label class="switch">
-            <input type="checkbox" class="device-switch" ${deviceChecked ? 'checked' : ''} ${(!hasGPU || !isSelected) ? 'disabled' : ''}>
-            <span class="slider"></span>
-          </label>
-        </div>
+        ${rightContent}
       `;
 
       const checkbox = card.querySelector('.card-checkbox');
@@ -484,8 +839,13 @@ document.addEventListener('DOMContentLoaded', () => {
       const toggleAction = () => {
         if (card.classList.contains('disabled')) return;
         
-        checkbox.checked = !checkbox.checked;
-        if (checkbox.checked) {
+        if (selectedConfig.draft_model === model.name) {
+          // Deselect
+          selectedConfig.draft_model = null;
+          card.classList.remove('selected');
+          checkbox.checked = false;
+        } else {
+          // Select
           // Uncheck all other draft models
           document.querySelectorAll('#draft-located-list .card-checkbox').forEach(cb => {
             if (cb !== checkbox) cb.checked = false;
@@ -496,12 +856,12 @@ document.addEventListener('DOMContentLoaded', () => {
           
           selectedConfig.draft_model = model.name;
           card.classList.add('selected');
+          checkbox.checked = true;
           
           const devSwitch = card.querySelector('.device-switch');
-          selectedConfig.draft_device = devSwitch.checked ? 'gpu' : 'cpu';
-        } else {
-          selectedConfig.draft_model = null;
-          card.classList.remove('selected');
+          if (devSwitch) {
+            selectedConfig.draft_device = devSwitch.checked ? 'gpu' : 'cpu';
+          }
         }
         
         updateDeviceSwitchStates();
@@ -509,22 +869,42 @@ document.addEventListener('DOMContentLoaded', () => {
       };
 
       card.addEventListener('click', (e) => {
-        if (e.target.closest('.switch') || e.target.closest('.device-switch')) return;
-        if (e.target === checkbox) {
-          checkbox.checked = !checkbox.checked;
-        }
+        if (e.target.closest('.switch') || e.target.closest('.device-switch') || e.target.closest('.download-btn') || e.target.closest('.restart-btn')) return;
+        toggleAction();
+      });
+
+      checkbox.addEventListener('click', (e) => {
+        e.stopPropagation();
         toggleAction();
       });
 
       const devSwitch = card.querySelector('.device-switch');
       const devLabel = card.querySelector('.device-toggle-label');
-      devSwitch.addEventListener('change', () => {
-        devLabel.textContent = devSwitch.checked ? 'GPU' : 'CPU';
-        if (card.classList.contains('selected')) {
-          selectedConfig.draft_device = devSwitch.checked ? 'gpu' : 'cpu';
-        }
-        updateResourceMeters();
-      });
+      if (devSwitch) {
+        devSwitch.addEventListener('change', () => {
+          devLabel.textContent = devSwitch.checked ? 'GPU' : 'CPU';
+          if (card.classList.contains('selected')) {
+            selectedConfig.draft_device = devSwitch.checked ? 'gpu' : 'cpu';
+          }
+          updateResourceMeters();
+        });
+      }
+
+      const downloadBtn = card.querySelector('.download-btn');
+      if (downloadBtn) {
+        downloadBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          startDownload(model.name, false);
+        });
+      }
+
+      const restartBtn = card.querySelector('.restart-btn');
+      if (restartBtn) {
+        restartBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          startDownload(model.name, true);
+        });
+      }
 
       draftList.appendChild(card);
     });
@@ -546,45 +926,63 @@ document.addEventListener('DOMContentLoaded', () => {
       card.className = `model-card ${isSelected ? 'selected' : ''}`;
       card.id = `card-mmproj-${model.name.replace(/\./g, '_')}`;
       
-      if (model.downloaded === false) {
-        card.innerHTML = `
-          <div class="card-left" style="opacity: 0.7;">
-            <span style="font-size: 14px; margin-right: 6px; user-select: none;">☁️</span>
-            <span class="card-name" title="${model.name}">${model.name}</span>
-            <span class="card-meta">${model.size_gb.toFixed(2)} GB</span>
-          </div>
-          <div class="card-right" id="download-container-${model.name.replace(/\./g, '_')}">
-            <button class="glow-btn download-btn" style="padding: 4px 8px; font-size: 11px; cursor: pointer; border-radius: 4px;">Download</button>
-          </div>
-        `;
-        
-        const btn = card.querySelector('.download-btn');
-        btn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          startDownload(model.name);
-        });
-        
-        mmprojList.appendChild(card);
-        return;
-      }
-      
+      const specs = getModelSpecs(model.name);
       const hasGPU = systemResources.vram.total > 0;
       const deviceChecked = isSelected ? (selectedConfig.mmproj_device === 'gpu' && hasGPU) : hasGPU;
+      
+      let rightContent = '';
+      if (model.downloaded === false) {
+        const safeId = model.name.replace(/\./g, '_').replace(/:/g, '_');
+        if (model.partial === true) {
+          rightContent = `
+            <div class="card-right" id="download-container-${safeId}" style="display: flex; gap: 6px; align-items: center;">
+              <button class="glow-btn download-btn resume-btn" style="padding: 4px 8px; font-size: 11px; cursor: pointer; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px; background: rgba(56, 189, 248, 0.15); border-color: rgba(56, 189, 248, 0.4); color: var(--accent-sky);">
+                Resume
+              </button>
+              <button class="glow-btn restart-btn" style="padding: 4px 8px; font-size: 11px; cursor: pointer; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px; background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.3); color: var(--accent-red, #ef4444);">
+                Restart
+              </button>
+            </div>
+          `;
+        } else {
+          rightContent = `
+            <div class="card-right" id="download-container-${safeId}">
+              <button class="glow-btn download-btn" style="padding: 4px 10px; font-size: 11px; cursor: pointer; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;">
+                <svg style="width: 11px; height: 11px;" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"></path>
+                </svg>
+                Download
+              </button>
+            </div>
+          `;
+        }
+      } else {
+        rightContent = `
+          <div class="card-right">
+            <span class="device-toggle-label">${deviceChecked ? 'GPU' : 'CPU'}</span>
+            <label class="switch">
+              <input type="checkbox" class="device-switch" ${deviceChecked ? 'checked' : ''} ${(!hasGPU || !isSelected) ? 'disabled' : ''}>
+              <span class="slider"></span>
+            </label>
+          </div>
+        `;
+      }
 
       card.innerHTML = `
         <div class="card-left">
           <input type="checkbox" class="card-checkbox" ${isSelected ? 'checked' : ''}>
-          <span class="card-name" title="${model.name}">${model.name}</span>
-          <span class="card-meta">${model.size_gb.toFixed(2)} GB</span>
-          <span class="family-warning" style="display: none;"></span>
+          <div style="display: flex; flex-direction: column; gap: 2px;">
+            <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+              <span class="card-name" title="${model.name}">${specs.cleanName}</span>
+              <span class="badge badge-arch">${specs.arch}</span>
+              <span class="badge badge-quant">${specs.quant}</span>
+              <span class="badge badge-size">${model.size_gb.toFixed(2)} GB</span>
+            </div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px; line-height: 1.3;">${specs.description}</div>
+            <span class="family-warning" style="display: none;"></span>
+          </div>
         </div>
-        <div class="card-right">
-          <span class="device-toggle-label">${deviceChecked ? 'GPU' : 'CPU'}</span>
-          <label class="switch">
-            <input type="checkbox" class="device-switch" ${deviceChecked ? 'checked' : ''} ${(!hasGPU || !isSelected) ? 'disabled' : ''}>
-            <span class="slider"></span>
-          </label>
-        </div>
+        ${rightContent}
       `;
 
       const checkbox = card.querySelector('.card-checkbox');
@@ -592,8 +990,14 @@ document.addEventListener('DOMContentLoaded', () => {
       const toggleAction = () => {
         if (card.classList.contains('disabled')) return;
         
-        checkbox.checked = !checkbox.checked;
-        if (checkbox.checked) {
+        if (selectedConfig.mmproj_model === model.name) {
+          // Deselect
+          selectedConfig.mmproj_model = null;
+          card.classList.remove('selected');
+          checkbox.checked = false;
+        } else {
+          // Select
+          // Uncheck all other vision models
           document.querySelectorAll('#mmproj-located-list .card-checkbox').forEach(cb => {
             if (cb !== checkbox) cb.checked = false;
           });
@@ -603,12 +1007,12 @@ document.addEventListener('DOMContentLoaded', () => {
           
           selectedConfig.mmproj_model = model.name;
           card.classList.add('selected');
+          checkbox.checked = true;
           
           const devSwitch = card.querySelector('.device-switch');
-          selectedConfig.mmproj_device = devSwitch.checked ? 'gpu' : 'cpu';
-        } else {
-          selectedConfig.mmproj_model = null;
-          card.classList.remove('selected');
+          if (devSwitch) {
+            selectedConfig.mmproj_device = devSwitch.checked ? 'gpu' : 'cpu';
+          }
         }
         
         updateDeviceSwitchStates();
@@ -616,22 +1020,42 @@ document.addEventListener('DOMContentLoaded', () => {
       };
 
       card.addEventListener('click', (e) => {
-        if (e.target.closest('.switch') || e.target.closest('.device-switch')) return;
-        if (e.target === checkbox) {
-          checkbox.checked = !checkbox.checked;
-        }
+        if (e.target.closest('.switch') || e.target.closest('.device-switch') || e.target.closest('.download-btn') || e.target.closest('.restart-btn')) return;
+        toggleAction();
+      });
+
+      checkbox.addEventListener('click', (e) => {
+        e.stopPropagation();
         toggleAction();
       });
 
       const devSwitch = card.querySelector('.device-switch');
       const devLabel = card.querySelector('.device-toggle-label');
-      devSwitch.addEventListener('change', () => {
-        devLabel.textContent = devSwitch.checked ? 'GPU' : 'CPU';
-        if (card.classList.contains('selected')) {
-          selectedConfig.mmproj_device = devSwitch.checked ? 'gpu' : 'cpu';
-        }
-        updateResourceMeters();
-      });
+      if (devSwitch) {
+        devSwitch.addEventListener('change', () => {
+          devLabel.textContent = devSwitch.checked ? 'GPU' : 'CPU';
+          if (card.classList.contains('selected')) {
+            selectedConfig.mmproj_device = devSwitch.checked ? 'gpu' : 'cpu';
+          }
+          updateResourceMeters();
+        });
+      }
+
+      const downloadBtn = card.querySelector('.download-btn');
+      if (downloadBtn) {
+        downloadBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          startDownload(model.name, false);
+        });
+      }
+
+      const restartBtn = card.querySelector('.restart-btn');
+      if (restartBtn) {
+        restartBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          startDownload(model.name, true);
+        });
+      }
 
       mmprojList.appendChild(card);
     });
@@ -928,12 +1352,14 @@ document.addEventListener('DOMContentLoaded', () => {
   const activeDownloads = {};
   const notifiedDownloads = new Set();
   
-  function startDownload(modelName) {
+  function startDownload(modelName, restart = false) {
     const safeId = modelName.replace(/\./g, '_').replace(/:/g, '_');
     const container = document.getElementById(`download-container-${safeId}`);
     if (container) {
       const btn = container.querySelector('.download-btn');
       if (btn) btn.disabled = true;
+      const restartBtn = container.querySelector('.restart-btn');
+      if (restartBtn) restartBtn.disabled = true;
     }
     notifiedDownloads.delete(modelName);
     
@@ -942,7 +1368,7 @@ document.addEventListener('DOMContentLoaded', () => {
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ model_name: modelName })
+      body: JSON.stringify({ model_name: modelName, restart: restart })
     })
     .then(res => {
       if (res.ok) {
@@ -955,6 +1381,8 @@ document.addEventListener('DOMContentLoaded', () => {
           if (container) {
             const btn = container.querySelector('.download-btn');
             if (btn) btn.disabled = false;
+            const restartBtn = container.querySelector('.restart-btn');
+            if (restartBtn) restartBtn.disabled = false;
           }
         });
       }
@@ -964,6 +1392,48 @@ document.addEventListener('DOMContentLoaded', () => {
       if (container) {
         const btn = container.querySelector('.download-btn');
         if (btn) btn.disabled = false;
+      }
+    });
+  }
+
+  function cancelDownload(modelName) {
+    const safeId = modelName.replace(/\./g, '_').replace(/:/g, '_');
+    const container = document.getElementById(`download-container-${safeId}`);
+    if (container) {
+      const cancelBtn = container.querySelector('.cancel-download-btn');
+      if (cancelBtn) {
+        cancelBtn.disabled = true;
+        cancelBtn.textContent = 'Cancelling...';
+      }
+    }
+    
+    fetch(`${BACKEND_URL}/api/models/download/cancel`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ model_name: modelName })
+    })
+    .then(res => {
+      if (!res.ok) {
+        console.error(`Failed to cancel download for ${modelName}`);
+        if (container) {
+          const cancelBtn = container.querySelector('.cancel-download-btn');
+          if (cancelBtn) {
+            cancelBtn.disabled = false;
+            cancelBtn.textContent = 'Cancel';
+          }
+        }
+      }
+    })
+    .catch(err => {
+      console.error(`Error requesting cancel for ${modelName}:`, err);
+      if (container) {
+        const cancelBtn = container.querySelector('.cancel-download-btn');
+        if (cancelBtn) {
+          cancelBtn.disabled = false;
+          cancelBtn.textContent = 'Cancel';
+        }
       }
     });
   }
@@ -985,6 +1455,11 @@ document.addEventListener('DOMContentLoaded', () => {
             hasActive = true;
             updateDownloadUI(modelName, info.progress, info.speed_mbps);
           } else if (info.status === 'completed') {
+            if (!notifiedDownloads.has(modelName)) {
+              notifiedDownloads.add(modelName);
+              anyCompletedOrError = true;
+            }
+          } else if (info.status === 'cancelled') {
             if (!notifiedDownloads.has(modelName)) {
               notifiedDownloads.add(modelName);
               anyCompletedOrError = true;
@@ -1047,8 +1522,17 @@ document.addEventListener('DOMContentLoaded', () => {
           <div style="width: 100%; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden;">
             <div style="width: ${progress}%; height: 100%; background: var(--text-main); transition: width 0.3s ease;"></div>
           </div>
+          <button class="cancel-download-btn" data-model="${modelName}" style="background: none; border: none; color: var(--accent-red, #ef4444); font-size: 10px; cursor: pointer; padding: 2px 4px; margin-top: 2px; text-decoration: underline;">Cancel</button>
         </div>
       `;
+      
+      const cancelBtn = container.querySelector('.cancel-download-btn');
+      if (cancelBtn) {
+        cancelBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          cancelDownload(modelName);
+        });
+      }
     }
   }
 
@@ -1071,7 +1555,7 @@ document.addEventListener('DOMContentLoaded', () => {
               const btn = container.querySelector('.download-btn');
               if (btn) btn.disabled = true;
             }
-          } else if (info.status === 'completed' || info.status === 'error') {
+          } else if (info.status === 'completed' || info.status === 'error' || info.status === 'cancelled') {
             notifiedDownloads.add(modelName);
           }
         }
@@ -1106,10 +1590,10 @@ document.addEventListener('DOMContentLoaded', () => {
         setupInterface(data);
         checkActiveDownloadOnStartup();
       } else {
-        setTimeout(checkBackendOnline, 1000);
+        setTimeout(checkBackendOnline, 200);
       }
     } catch (e) {
-      setTimeout(checkBackendOnline, 1000);
+      setTimeout(checkBackendOnline, 200);
     }
   }
 
