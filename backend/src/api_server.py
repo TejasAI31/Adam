@@ -986,10 +986,9 @@ def run_chat_pipeline_helper(prompt: str, image_input: Optional[str] = None, spe
         
     target_session_id = session_id or active_session_id
     
-    # Only interrupt if the user sent a prompt in the SAME session that is currently processing!
-    # Or if we want to interrupt speech synthesis.
+    # Only interrupt if the user sent a prompt in the SAME session that is currently processing or speech is active!
     if duplex_manager:
-        if target_session_id == current_processing_session_id or duplex_manager.is_speaking:
+        if (target_session_id == current_processing_session_id and current_processing_session_id is not None) or (duplex_manager.is_speaking and speech_enabled):
             duplex_manager.interrupt()
         
     with chat_pipeline_lock:
@@ -2193,27 +2192,37 @@ def unload_models():
     run_unload_worker()
     return {"status": "unloaded"}
 
+class ContextCompressPayload(BaseModel):
+    session_id: Optional[str] = None
+
 @app.post("/api/chat/compress")
-def post_compress():
-    global duplex_manager
+def post_compress(payload: Optional[ContextCompressPayload] = None):
+    global duplex_manager, session_histories, active_session_id
     if not duplex_manager:
         raise HTTPException(status_code=400, detail="Duplex Manager not loaded.")
     
+    target_id = (payload.session_id if payload else None) or active_session_id
+    
     with duplex_manager.history_lock:
+        if target_id and target_id in session_histories:
+            history_to_compress = session_histories[target_id]
+        else:
+            history_to_compress = list(duplex_manager.history)
+
         # Compress tool outputs in history
-        for msg in duplex_manager.history:
+        for msg in history_to_compress:
             if msg.get("role") == "tool" and isinstance(msg.get("content"), str):
                 if len(msg["content"]) > 100:
                     msg["content"] = msg["content"][:100] + "\n...[Content compressed]"
-            elif msg.get("role") == "assistant" and isinstance(msg.get("content"), str):
-                pass
         
-        # Keep only the last 4 turns if history is too long
-        if len(duplex_manager.history) > 8:
-            duplex_manager.history = duplex_manager.history[-8:]
+        # Keep only the last 6 messages (3 turns)
+        if len(history_to_compress) > 6:
+            history_to_compress = history_to_compress[-6:]
             
-    if active_session_id:
-        sync_session_history_to_persistence(active_session_id, prune_ui_messages=True)
+        if target_id:
+            session_histories[target_id] = history_to_compress
+            
+        duplex_manager.history = history_to_compress
             
     import gc
     import torch
@@ -2224,9 +2233,10 @@ def post_compress():
             pass
     gc.collect()
 
-    broadcast_log("SYSTEM", "Context compression executed successfully.")
     context_turns = sum(1 for m in duplex_manager.history if m.get("role") == "user")
-    return {"status": "compressed", "context_turns": context_turns}
+    broadcast_log("SYSTEM", f"Context compression executed successfully. New context: {context_turns} turns.")
+    broadcast_event("context_compressed", {"session_id": target_id, "context_turns": context_turns})
+    return {"status": "compressed", "context_turns": context_turns, "session_id": target_id}
 
 
 @app.post("/api/voice")
@@ -2314,19 +2324,17 @@ def save_sessions(payload: List[dict]):
     with chat_pipeline_lock:
         save_sessions_list(payload)
         
-        # Clean and rebuild session_histories from payload to prevent leaks and corruption
-        new_histories = {}
+        # Populate session_histories for newly seen sessions without overwriting active/compressed contexts
         for s in payload:
             s_id = s.get("id")
-            if s_id:
+            if s_id and s_id not in session_histories:
                 h = []
                 for m in s.get("messages", []):
                     h.append({
                         "role": "user" if m.get("sender") == "user" else "assistant",
                         "content": m.get("text", "")
                     })
-                new_histories[s_id] = h
-        session_histories = new_histories
+                session_histories[s_id] = h
         
         # Synchronize active_session_id only if it is not currently set
         if payload and not active_session_id:
@@ -2334,7 +2342,9 @@ def save_sessions(payload: List[dict]):
             
         # Re-sync duplex history if active
         if active_session_id and duplex_manager:
-            duplex_manager.history = session_histories.get(active_session_id, [])
+            if active_session_id not in session_histories:
+                session_histories[active_session_id] = []
+            duplex_manager.history = session_histories[active_session_id]
             
     broadcast_event("sessions_updated", {})
     return {"status": "sessions_saved"}
@@ -2343,12 +2353,30 @@ def save_sessions(payload: List[dict]):
 def post_session_switch(payload: SessionSwitchPayload):
     global active_session_id, duplex_manager, session_histories
     active_session_id = payload.session_id
-    if duplex_manager:
-        with duplex_manager.history_lock:
-            duplex_manager.history = session_histories.get(active_session_id, [])
-    broadcast_log("SYSTEM", f"Switched active session reference to: {active_session_id}")
-    broadcast_event("session_switch", {"session_id": active_session_id})
-    return {"status": "switched", "session_id": active_session_id}
+    context_turns = 0
+    if active_session_id:
+        if active_session_id not in session_histories:
+            sessions = load_sessions_list()
+            s = next((item for item in sessions if item.get("id") == active_session_id), None)
+            if s:
+                h = []
+                for m in s.get("messages", []):
+                    h.append({
+                        "role": "user" if m.get("sender") == "user" else "assistant",
+                        "content": m.get("text", "")
+                    })
+                session_histories[active_session_id] = h
+            else:
+                session_histories[active_session_id] = []
+                
+        if duplex_manager:
+            with duplex_manager.history_lock:
+                duplex_manager.history = session_histories[active_session_id]
+                context_turns = sum(1 for m in duplex_manager.history if m.get("role") == "user")
+                
+    broadcast_log("SYSTEM", f"Switched active session reference to: {active_session_id} ({context_turns} turns)")
+    broadcast_event("session_switch", {"session_id": active_session_id, "context_turns": context_turns})
+    return {"status": "switched", "session_id": active_session_id, "context_turns": context_turns}
 
 
 @app.post("/api/session/clear")

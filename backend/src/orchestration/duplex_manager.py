@@ -143,9 +143,12 @@ class FullDuplexManager:
                     if "data:image/" in content:
                         msg["content"] = re.sub(r"data:image/[^;]+;base64,[A-Za-z0-9+/=]+", "[Image Data Removed]", content)
 
-            # Apply strict rolling window max_turns limit
+            # Apply strict rolling window max_turns limit while keeping tool-call pairs atomic
             if len(self.history) > self.max_history_turns:
-                self.history = self.history[-self.max_history_turns :]
+                start_idx = len(self.history) - self.max_history_turns
+                while start_idx > 0 and self.history[start_idx].get("role") == "tool":
+                    start_idx -= 1
+                self.history = self.history[start_idx:]
 
             # Adaptive token check & Emergency Fixing Measures
             est_tokens = self._estimate_tokens(self.history)
@@ -870,6 +873,8 @@ class FullDuplexManager:
 
     def _clean_messages_for_template(self, messages):
         cleaned = []
+        valid_tool_ids = set()
+        
         for msg in messages:
             role = msg.get("role")
             content = msg.get("content")
@@ -893,6 +898,21 @@ class FullDuplexManager:
                         continue
                     elif not content:
                         continue
+                else:
+                    for tc in tool_calls:
+                        if isinstance(tc, dict) and tc.get("id"):
+                            valid_tool_ids.add(tc["id"])
+            
+            # If a tool message is orphaned (preceding assistant tool_calls sliced out), convert it to user context
+            if role == "tool":
+                tid = msg.get("tool_call_id")
+                if not tid or tid not in valid_tool_ids:
+                    tool_name = msg.get("name", "tool")
+                    cleaned.append({
+                        "role": "user",
+                        "content": f"[Previous Tool Result for {tool_name}]: {content}"
+                    })
+                    continue
                         
             clean_msg = {"role": role, "content": content}
             if tool_calls:

@@ -289,8 +289,16 @@ document.addEventListener('DOMContentLoaded', () => {
     lastAutoCompressTime = now;
     
     try {
-      const res = await fetch(`${BACKEND_URL}/api/chat/compress`, { method: 'POST' });
+      const res = await fetch(`${BACKEND_URL}/api/chat/compress`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: currentSessionId })
+      });
       if (res.ok) {
+        const rdata = await res.json();
+        if (contextTurnsVal && rdata.context_turns !== undefined) {
+          contextTurnsVal.textContent = `${rdata.context_turns} turns`;
+        }
         appendLogConsole("[SYSTEM] Automatic context compression triggered due to VRAM usage exceeding 95%.");
       }
     } catch (e) {
@@ -770,6 +778,10 @@ document.addEventListener('DOMContentLoaded', () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ session_id: id })
+        }).then(r => r.json()).then(data => {
+          if (contextTurnsVal && data && data.context_turns !== undefined) {
+            contextTurnsVal.textContent = `${data.context_turns} turns`;
+          }
         }).catch(err => console.warn("Failed to switch session context in backend:", err));
       }
     }
@@ -1556,12 +1568,20 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error("[Chat Error]", data);
     }
 
-    // 11. Sessions and remote control updates
+    // 11. Sessions, context compression, and remote control updates
+    if (type === 'context_compressed') {
+      if (data && data.context_turns !== undefined) {
+        if (contextTurnsVal) contextTurnsVal.textContent = `${data.context_turns} turns`;
+      }
+    }
     if (type === 'sessions_updated') {
       syncSessions();
     }
     if (type === 'session_switch') {
       const targetSessionId = data.session_id;
+      if (data && data.context_turns !== undefined && contextTurnsVal) {
+        contextTurnsVal.textContent = `${data.context_turns} turns`;
+      }
       if (targetSessionId !== currentSessionId) {
         selectSession(targetSessionId, false);
       }
@@ -2171,9 +2191,16 @@ document.addEventListener('DOMContentLoaded', () => {
     btnCompressContext.addEventListener('click', async (e) => {
       if (e && e.currentTarget) e.currentTarget.blur();
       try {
-        const res = await fetch(`${BACKEND_URL}/api/chat/compress`, { method: 'POST' });
+        const res = await fetch(`${BACKEND_URL}/api/chat/compress`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id: currentSessionId })
+        });
         if (res.ok) {
           const rdata = await res.json();
+          if (contextTurnsVal && rdata.context_turns !== undefined) {
+            contextTurnsVal.textContent = `${rdata.context_turns} turns`;
+          }
           showToast(`Context compressed successfully! (${rdata.context_turns} turns)`);
           appendLogConsole(`[SYSTEM] Manual context compression executed. New size: ${rdata.context_turns} turns.`);
         } else {

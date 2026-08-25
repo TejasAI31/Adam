@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="images/Adam.png" alt="Adam Logo" width="140">
+  <img src="images/Adam.svg" alt="Adam Logo" width="500">
 </p>
 
 # Adam: Local AI Desktop Assistant
@@ -16,10 +16,28 @@
 
 ## Table of Contents
 
+* [Download & Installation](#download--installation)
 * [Core Features](#core-features)
 * [Technical Specifications](#technical-specifications)
-* [Installation & Setup Guide](#installation--setup-guide)
-* [Building a Standalone Installer](#building-a-standalone-installer)
+* [Building From Source](#building-from-source)
+* [Packaging a Standalone Installer](#packaging-a-standalone-installer)
+
+---
+
+## Download & Installation
+
+### Windows Installer (Recommended)
+
+You can download the pre-packaged, ready-to-run installation wizard directly from the official Google Drive repository:
+
+> [**Download Adam Installer (Google Drive)**](https://drive.google.com/drive/folders/1_Lq3th3Yww-DCVcGCyODZ4r5P6X0d289?usp=drive_link)
+
+#### Setup Guide:
+1. **Download the Setup Package**: Navigate to the Google Drive link above and download the latest installer executable (`Adam-Setup.exe`).
+2. **Run the Installation Wizard**: Double-click the downloaded setup file to start the installer. If prompted by Windows SmartScreen, select *More info* &rarr; *Run anyway*.
+3. **Choose Installation Destination**: Follow the on-screen prompts to select your installation directory and choose whether to create desktop shortcuts.
+4. **Complete Installation**: Click **Install** and wait for the wizard to copy application files, Python runtime, and audio dependencies.
+5. **Launch & Hardware Scan**: Open Adam from your desktop or start menu. On the initial startup screen, the integrated hardware detector will automatically scan your CPU, RAM, and GPU/VRAM to recommend optimal settings. Click **Proceed** to initialize the workspace.
 
 ---
 
@@ -117,19 +135,19 @@
 | **Speed Drafter** | `Qwen3.5-0.8B-Q4_K_M.gguf` | `Qwen/Qwen3.5-0.8B-Instruct-GGUF` | 0.50 GB | CPU / CUDA GPU |
 | **Multi-Modal Helper** | `mmproj-Qwen3.5-4B-BF16.gguf` | `Qwen/Qwen3.5-4B-Instruct-GGUF` | 0.63 GB | CPU / CUDA GPU |
 | **Speech-to-Text** | `whisperx:medium` | `Systran/faster-whisper-medium` | 1.50 GB | CPU / CUDA GPU |
-| **Text-to-Speech** | `tts:qwen` | `Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice` | 1.20 GB | CPU / CUDA GPU |
+| **Text-to-Speech** | `tts:qwen` | `Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice` | 1.20 GB | CUDA GPU |
 
 ### Hardware Requirements
 
 | Component | Minimum Specifications | Recommended Specifications |
 | :--- | :--- | :--- |
 | **Processor (CPU)** | 4 Cores | 8 Cores (Intel Core i7 / AMD Ryzen 7) |
-| **System Memory (RAM)** | 16 GB | 32 GB |
-| **Graphics Card (GPU)** | 6 GB VRAM (NVIDIA CUDA-compatible) | 12 GB+ VRAM (NVIDIA RTX Series) |
+| **System Memory (RAM)** | 8 GB | 16 GB |
+| **Graphics Card (GPU)** | 4 GB VRAM (NVIDIA CUDA-compatible) | 8 GB+ VRAM (NVIDIA RTX Series) |
 
 ---
 
-## Installation & Setup Guide
+## Building From Source
 
 To run this project from the source code, you need to set up both the backend and frontend environments.
 
@@ -150,7 +168,7 @@ npm install
 ```
 
 ### 3. Run the Application
-To start the app, run the development server from the `electron` directory:
+To start the app in development mode, run:
 ```cmd
 cd electron
 npm run dev
@@ -158,11 +176,11 @@ npm run dev
 
 ---
 
-## Building a Standalone Installer
+## Packaging a Standalone Installer
 
 If you want to package the entire project into a portable Windows executable installer:
 ```cmd
 cd build
 build.bat
 ```
-This script builds the Python backend, bundles the required audio libraries, copies settings configurations, and outputs a single, easy-to-run setup file.
+This script compiles the Python backend, bundles the required audio libraries, copies settings configurations, and outputs a single, easy-to-run setup file in the `dist` directory.
